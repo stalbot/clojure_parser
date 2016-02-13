@@ -135,9 +135,29 @@
                       with-feature
                       1.0
                       (get-in compiled-pcfg-for-test ["$RP" :productions])
-                      (get-in compiled-pcfg-for-test ["$RP" :productions_total]))]
+                      (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
+          has-parent-feature (-> with-feature
+                                 zp/up
+                                 (zp/edit #(assoc %1 :features {"person" "3"}))
+                                 zp/down)
+          successor1 (get-successor-states
+                       modified-pcfg
+                       has-parent-feature
+                       1.0
+                       (get-in compiled-pcfg-for-test ["$RP" :productions])
+                       (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
+          successor2 (get-successor-states
+                       compiled-pcfg-for-test
+                       has-parent-feature
+                       1.0
+                       (get-in compiled-pcfg-for-test ["$RP" :productions])
+                       (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
+          ]
       (is (= (-> successor first first zp/node :features) {}))
       (is (= (-> successor (nth 1) first zp/node :features) {}))
+      (is (= (-> successor1 first first zp/node :features) {"person" "3"}))
+      (is (= (-> successor2 first first zp/node :features)
+             {"person" "3", "plural" true}))
       )
   ))
 

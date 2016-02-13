@@ -217,9 +217,6 @@
       zp/up
       (zp/edit
         (fn [new-state current-node]
-          (println (:label new-state) (get-in pcfg
-                           [(:label new-state)
-                            :isolate_features]))
           (update
             new-state
             :features
@@ -329,8 +326,13 @@
   )
 
 (defn make-next-state
-  [current-state parent-sym]
-  (tree-node parent-sym [current-state]))
+  [pcfg current-state parent-sym]
+  (tree-node
+    parent-sym
+    [current-state]
+    (apply dissoc
+           (:features current-state)
+           (get-in pcfg [parent-sym :isolate_features]))))
 
 (defn get-word-info
   "Split out into its own function because it will become much
@@ -341,8 +343,10 @@
 (defn create-first-state
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
-  [word]
-  (priority-map-gt (tree-node word nil) 1.0))
+  [pcfg word]
+  (priority-map-gt
+    (tree-node word nil (get-in pcfg [word :features] {}))
+    1.0))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -377,7 +381,7 @@
   the result of a call to `make-lexical-lkup`"
   [pcfg first-word]
   (finalize-initial-states
-    (loop [frontier (create-first-state first-word)
+    (loop [frontier (create-first-state pcfg first-word)
            found (priority-map-gt)]
       (let [[current-state current-prob] (peek frontier)
             [frontier found]
@@ -390,12 +394,12 @@
                     [frontier
                      (assoc
                        found
-                       (make-next-state current-state parent-sym)
+                       (make-next-state pcfg current-state parent-sym)
                        (* prob current-prob))
                      ]
                     [(assoc
                        frontier
-                       (make-next-state current-state parent-sym)
+                       (make-next-state pcfg current-state parent-sym)
                        (* prob current-prob))
                      found
                      ])))
