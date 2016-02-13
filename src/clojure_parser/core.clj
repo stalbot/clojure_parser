@@ -55,6 +55,7 @@
                            #(assoc %1 :count (double (:count %1)))
                            (:productions entry)))
           :parents (priority-map-gt)
+          :isolate_features (into #{} (:isolate_features entry))
           )))
     pcfg
     pcfg
@@ -178,7 +179,11 @@
     (> (count s2) (count s1))
     (every? true? (map-indexed (fn [idx el] (= (get s2 idx) el)) s1))))
 
-(defrecord TreeNode [label children])
+(defrecord TreeNode [label children features])
+
+(defn tree-node
+  ([label children] (TreeNode. label children {}))
+  ([label children features] (TreeNode. label children features)))
 
 (defn mk-traversable-tree [tree]
   "Takes a tree and makes it zippable. Assumes tree is in form of
@@ -186,7 +191,7 @@
   (zp/zipper
     #(-> %1 :children nil? not)
     #(-> %1 :children seq)
-    #(TreeNode. (:label %1) %2)
+    #(tree-node (:label %1) %2)
     tree))
 
 (defn append-and-go-to-child
@@ -226,7 +231,7 @@
                 current-state
                 ; NOTE: this empty vector rather than nil is meaningful -> this is
                 ; a list we intend to fill, rather than a leaf node without children
-                (TreeNode. (nth (:elements production) num-children) []))
+                (tree-node (nth (:elements production) num-children) []))
                (* current-prob (/ (:count production) total-production-prob))]
               )
             )
@@ -292,7 +297,7 @@
 
 (defn make-next-state
   [current-state parent-sym]
-  (TreeNode. parent-sym [current-state]))
+  (tree-node parent-sym [current-state]))
 
 (defn get-word-info
   "Split out into its own function because it will become much
@@ -304,7 +309,7 @@
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
   [word]
-  (priority-map-gt (TreeNode. word nil) 1.0))
+  (priority-map-gt (tree-node word nil) 1.0))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -390,7 +395,7 @@
         (fn [new-states-and-probs state prob]
           (assoc
             new-states-and-probs
-            (append-and-go-to-child state (TreeNode. word nil))
+            (append-and-go-to-child state (tree-node word nil))
             (update-prob-by-word lexicon state prob word total)))
         (priority-map-gt)
         states-and-probs

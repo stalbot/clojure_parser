@@ -6,7 +6,8 @@
 
 (def pcfg-for-test
   {
-   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]}
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+         :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$AP" "$N"], :count 0.3}
                         {:elements ["$N" "$N"], :count 0.3}
                         {:elements ["$N"], :count 0.7}]}
@@ -23,7 +24,8 @@
 (def lexicon-for-test
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
                                     {:name "individual", :count 2}]}
-   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
+                                  {:name "faces", :count 1, :features {"plural" true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
    "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
@@ -42,12 +44,12 @@
   (= (format "%.8f" num1) (format "%.8f" num2)))
 
 (deftest test-compiled-lexicon-is-well-formatted
-  (is (= 11.0 (apply + (map
+  (is (= 12.0 (apply + (map
                         (fn [d] (or (get d "n") 0.0))
                         (for
                           [[k v] compiled-lexicon-for-test]
                           (if (= k :totals) {} v))))))
-  (is (= 11.0 (get-in compiled-lexicon-for-test [:totals "n"])))
+  (is (= 12.0 (get-in compiled-lexicon-for-test [:totals "n"])))
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
   (is (= 2.0 (get-in compiled-lexicon-for-test [:totals "r"])))
   (is (= (get-in compiled-lexicon-for-test ["face" "v"]) 2.0))
@@ -55,13 +57,15 @@
   (is (= (get-in compiled-lexicon-for-test ["individual" "n"]) 2.0)))
 
 (deftest test-compiled-pcfg-is-well-formatted
-  (is (= (get-in compiled-pcfg-for-test ["$N" :productions_total]) 11.0))
+  (is (= (get-in compiled-pcfg-for-test ["$N" :productions_total]) 12.0))
   (is (approx= 1.3 (apply + (map :count (get-in compiled-pcfg-for-test ["$NP", :productions])))))
   (is (approx= 1.3 (get-in compiled-pcfg-for-test ["$NP" :productions_total])))
   (is (approx= 0.5 (get-in compiled-pcfg-for-test ["$AP" :productions_total])))
   (is (= (:parents (get compiled-pcfg-for-test "$S")) {}))
   (is (= (:productions (get compiled-pcfg-for-test "$S"))
          [{:elements ["$NP" "$VP"] :count 4.0}]))
+  ; below assertion has nice property of failing if we kept :isolate_features as a vector
+  (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP")) {"$S" 4.0}))
   (is (= (get-in compiled-pcfg-for-test ["face" :parents]) {"$N" 3.0, "$V" 2.0}))
   (is (= (get-in compiled-pcfg-for-test ["face" :parents_total]) 5.0))
@@ -75,7 +79,7 @@
 
 (def tnode
   (mk-traversable-tree
-    (TreeNode. "$AP" [(TreeNode. "$RP" [(TreeNode. "$R" nil)])])))
+    (tree-node "$AP" [(tree-node "$RP" [(tree-node "$R" nil)])])))
 
 (deftest test-sequence-is-extension
   (is (= (sequence-is-extension ["$NP"] ["$NP" "$VP"]) true))
@@ -91,7 +95,7 @@
            1.0
            (get-in compiled-pcfg-for-test ["$AP" :productions])
            (get-in compiled-pcfg-for-test ["$AP" :productions_total]))
-         [[(append-and-go-to-child tnode (TreeNode. "$AA" []))
+         [[(append-and-go-to-child tnode (tree-node "$AA" []))
            0.2]]))
   (let [child (zp/down tnode)]
     (is (= (get-successor-states
@@ -99,12 +103,12 @@
              1.0
              (get-in compiled-pcfg-for-test ["$RP" :productions])
              (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-           [[tnode 1.0] [(append-and-go-to-child child (TreeNode. "$RP" [])) 0.5]])))
+           [[tnode 1.0] [(append-and-go-to-child child (tree-node "$RP" [])) 0.5]])))
   )
 
 (def realistic-tnode
   (mk-traversable-tree
-    (TreeNode. "$S" [(TreeNode. "$NP" [(TreeNode. "$N" [(TreeNode. "dogs" [])])])])))
+    (tree-node "$S" [(tree-node "$NP" [(tree-node "$N" [(tree-node "dogs" [])])])])))
 
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
@@ -113,45 +117,45 @@
         learned (infer-possible-states compiled-pcfg-for-test child)]
     (is (= (keys learned)
            [(append-and-go-to-child
-             (append-and-go-to-child realistic-tnode (TreeNode. "$VP" []))
-             (TreeNode. "$V" []))
+             (append-and-go-to-child realistic-tnode (tree-node "$VP" []))
+             (tree-node "$V" []))
             (-> realistic-tnode
                 zp/down
-                (append-and-go-to-child (TreeNode. "$N" [])))]))
+                (append-and-go-to-child (tree-node "$N" [])))]))
     (is (approx= (reduce + (vals learned)) 1.0))
     (is (approx= (first (vals learned)) 0.7222222222222))
   ))
 
 (def first-inferred-state
-  (let [raw (TreeNode.
+  (let [raw (tree-node
               "$S"
-              [(TreeNode.
+              [(tree-node
                  "$NP"
-                 [(TreeNode.
+                 [(tree-node
                     "$N"
-                    [(TreeNode. "face" nil)])])])]
+                    [(tree-node "face" nil)])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state1
-  (let [raw (TreeNode.
+  (let [raw (tree-node
               "$S"
-              [(TreeNode.
+              [(tree-node
                  "$NP"
-                 [(TreeNode.
+                 [(tree-node
                     "$N"
-                    [(TreeNode. "cool" nil)])])])]
+                    [(tree-node "cool" nil)])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state2
-  (let [raw (TreeNode.
+  (let [raw (tree-node
               "$S"
-              [(TreeNode.
+              [(tree-node
                  "$NP"
-                 [(TreeNode.
+                 [(tree-node
                     "$AP"
-                    [(TreeNode.
+                    [(tree-node
                        "$A"
-                       [(TreeNode. "cool" nil)])])])])]
+                       [(tree-node "cool" nil)])])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (deftest test-infer-initial-possible-states
@@ -167,10 +171,10 @@
   )
 
 (def pre-state-1
-  (zp/edit (zp/remove ambiguous-inferred-state1) #(TreeNode. (:label %1) [])))
+  (zp/edit (zp/remove ambiguous-inferred-state1) #(tree-node (:label %1) [])))
 
 (def pre-state-2
-  (zp/edit (zp/remove ambiguous-inferred-state2) #(TreeNode. (:label %1) [])))
+  (zp/edit (zp/remove ambiguous-inferred-state2) #(tree-node (:label %1) [])))
 
 (deftest test-update-state-probs-for-word
   (is (= (update-state-probs-for-word
@@ -180,33 +184,33 @@
          (priority-map-gt
            ; need to append rather than use ambiguous-inferred-stateX b/c need
            ; the changed flag to be set for equality to work.
-           (append-and-go-to-child pre-state-1 (TreeNode. "cool" nil)) 0.2
-           (append-and-go-to-child pre-state-2 (TreeNode. "cool" nil)) 0.8))))
+           (append-and-go-to-child pre-state-1 (tree-node "cool" nil)) 0.2
+           (append-and-go-to-child pre-state-2 (tree-node "cool" nil)) 0.8))))
 
 (def good-parse-for-eos1
   (-> ambiguous-inferred-state1
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (TreeNode. "$VP" []))
-      (append-and-go-to-child (TreeNode. "$V" []))
-      (append-and-go-to-child (TreeNode. "face" nil))))
+      (append-and-go-to-child (tree-node "$VP" []))
+      (append-and-go-to-child (tree-node "$V" []))
+      (append-and-go-to-child (tree-node "face" nil))))
 
 (def good-parse-for-eos2
   (-> ambiguous-inferred-state1
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (TreeNode. "$VP" []))
-      (append-and-go-to-child (TreeNode. "$V" []))
-      (append-and-go-to-child (TreeNode. "chase" nil))))
+      (append-and-go-to-child (tree-node "$VP" []))
+      (append-and-go-to-child (tree-node "$V" []))
+      (append-and-go-to-child (tree-node "chase" nil))))
 
 (def bad-parse-for-eos
   (-> ambiguous-inferred-state2
       zp/up
       zp/up
-      (append-and-go-to-child (TreeNode. "$N" []))
-      (append-and-go-to-child (TreeNode. "cool" nil))))
+      (append-and-go-to-child (tree-node "$N" []))
+      (append-and-go-to-child (tree-node "cool" nil))))
 
 (deftest test-update-probs-for-eos
   (let [updated (update-state-probs-for-eos
@@ -227,7 +231,7 @@
 (deftest test-update-pcfg-count
   (let [updated (update-pcfg-count
                   compiled-pcfg-for-test
-                  (TreeNode. "$NP" [(TreeNode. "$N" nil)])
+                  (tree-node "$NP" [(tree-node "$N" nil)])
                   0.5)]
     (is (approx= (get-in updated ["$NP" :productions_total]) 1.8))
     (is (approx= (get-in updated ["$NP" :productions 2 :count]) 1.2))
@@ -236,7 +240,7 @@
     )
   (is (= (update-pcfg-count
            compiled-pcfg-for-test
-           (TreeNode. "$S" [(TreeNode. "$NP" nil) (TreeNode. "$VP" nil)])
+           (tree-node "$S" [(tree-node "$NP" nil) (tree-node "$VP" nil)])
            0.5)
          (-> compiled-pcfg-for-test
              (assoc-in ["$S" :productions_total] 4.5)
@@ -262,7 +266,7 @@
     (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$NP" :productions]))) 2.05))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$AP" :productions]))) 0.5)) ; should not change
-    (is (= (get learned-lexicon1 :totals) {"r" 2.0, "a" 7.0, "n" 11.75, "v" 3.75}))
+    (is (= (get learned-lexicon1 :totals) {"r" 2.0, "a" 7.0, "n" 12.75, "v" 3.75}))
     (is (= (get learned-lexicon1 "face") {"n" 3.0, "v" 2.75}))
     (is (= (get learned-lexicon1 "chase") {"v" 1.0}))
     (is (= (get learned-lexicon2 "chase") {"v" 1.25}))
