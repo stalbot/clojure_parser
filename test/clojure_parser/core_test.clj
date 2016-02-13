@@ -91,6 +91,7 @@
 
 (deftest test-get-successor-states
   (is (= (get-successor-states
+           compiled-pcfg-for-test
            tnode
            1.0
            (get-in compiled-pcfg-for-test ["$AP" :productions])
@@ -99,12 +100,46 @@
            0.2]]))
   (let [child (zp/down tnode)]
     (is (= (get-successor-states
+             compiled-pcfg-for-test
              child
              1.0
              (get-in compiled-pcfg-for-test ["$RP" :productions])
              (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-           [[tnode 1.0] [(append-and-go-to-child child (tree-node "$RP" [])) 0.5]])))
+           [[(zp/edit tnode #(-> %1)) 1.0] ; edit b/c must have :changed -> true
+            [(append-and-go-to-child child (tree-node "$RP" [])) 0.5]])))
   )
+
+(deftest test-get-successor-states-with-features
+  (let [with-feature (->
+                       tnode
+                       zp/down
+                       (zp/edit #(assoc %1 :features {"plural" true})))
+        successor (get-successor-states
+                    compiled-pcfg-for-test
+                    with-feature
+                    1.0
+                    (get-in compiled-pcfg-for-test ["$RP" :productions])
+                    (get-in compiled-pcfg-for-test ["$RP" :productions_total]))]
+    (is (= (-> successor first first zp/node :features) {"plural" true}))
+    (is (= (-> successor (nth 1) first zp/node :features) {"plural" true}))
+    (let [modified-pcfg (assoc-in
+                          compiled-pcfg-for-test
+                          ["$AP" :isolate_features]
+                          #{"plural"})
+          modified-pcfg (assoc-in
+                          modified-pcfg
+                          ["$RP" :isolate_features]
+                          #{"plural"})
+          successor (get-successor-states
+                      modified-pcfg
+                      with-feature
+                      1.0
+                      (get-in compiled-pcfg-for-test ["$RP" :productions])
+                      (get-in compiled-pcfg-for-test ["$RP" :productions_total]))]
+      (is (= (-> successor first first zp/node :features) {}))
+      (is (= (-> successor (nth 1) first zp/node :features) {}))
+      )
+  ))
 
 (def realistic-tnode
   (mk-traversable-tree
