@@ -124,45 +124,70 @@
       )))
 
 (defn group-lexicon-by-cat [lexicon]
-  (reduce
-    (fn
-      [lexical-categories node]
-      (reduce
-        (fn [lexical-categories lem]
-          (update-in lexical-categories
-                    [(:pos node) (:name lem)]
-                     #(+ (or %1 0.0) (:count lem))
-          ))
-        lexical-categories
-        (:lemmas node)
+  (reduce-kv
+    (fn [lexical-categories syn-name info]
+      (let [pos (:pos info)
+            total (reduce + (map :count (:lemmas info)))]
+        (-> lexical-categories
+            (assoc-in [pos syn-name] total)
+            (update-in [pos :total] #(+ (or %1 0.0) total)))
       ))
     {}
-    (vals lexicon)
+    lexicon
     ))
 
-(defn make-production
-  [[word count]]
-  {:elements [word] :count count})
+(defn make-syn-production
+  [[syn-name count]]
+  {:elements [syn-name] :count count})
+
+(defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
+     (reduce
+       (fn [lexicalizing-pcfg lemma-entry]
+         (assoc-in
+           lexicalizing-pcfg
+           [(:name lemma-entry) :features]
+           (get lemma-entry :features {})))
+       lexicalizing-pcfg
+       (get-in lexicon [syn-name :lemmas])))
+
+(defn add-word-leaves
+  [lexicalizing-pcfg lexicon syns-to-totals]
+  (reduce-kv
+    (fn [lexicalizing-pcfg syn-name total]
+      (->
+        lexicalizing-pcfg
+        (assoc-in [syn-name :productions_total] total)
+        (assoc-in
+          [syn-name :productions]
+          (map (fn [lemma-entry]
+                 {:elements [(:name lemma-entry)] :count (:count lemma-entry)})
+               (get-in lexicon [syn-name :lemmas])))
+        (add-leaves-as-nodes lexicon syn-name)
+        ))
+    lexicalizing-pcfg
+    syns-to-totals
+    ))
 
 (defn lexicalize-pcfg
   [unlexicalized-pcfg lexicon]
   (let [by-lex-cat (group-lexicon-by-cat lexicon)]
     (reduce-kv
-      (fn [unlexicalized-pcfg pos words]
+      (fn [unlexicalized-pcfg pos pos-to-syn-info]
         (let [pos-for-sym (get pos-to-sym-lkup pos)
-              total (apply + (vals words))
-              unlexicalized-pcfg (assoc-in
-                                   unlexicalized-pcfg
-                                   [pos-for-sym :productions_total]
-                                   total)
-              unlexicalized-pcfg (assoc-in
-                                   unlexicalized-pcfg
-                                   [pos-for-sym :lex-node]
-                                   true)]
-          (assoc-in
-            unlexicalized-pcfg
-            [pos-for-sym :productions]
-            (map make-production words)))
+              without-total (dissoc pos-to-syn-info :total)]
+          (-> unlexicalized-pcfg
+              (assoc-in
+                [pos-for-sym :productions_total]
+                (:total pos-to-syn-info))
+              (assoc-in
+                [pos-for-sym :lex-node]
+                true)
+              (assoc-in
+                [pos-for-sym :productions]
+                (map make-syn-production without-total))
+              (add-word-leaves lexicon without-total)
+              )
+          )
         )
       unlexicalized-pcfg
       by-lex-cat
@@ -334,12 +359,6 @@
            (:features current-state)
            (get-in pcfg [parent-sym :isolate_features]))))
 
-(defn get-word-info
-  "Split out into its own function because it will become much
-   more complex later"
-  [lexicon word]
-  (get lexicon word))
-
 (defn create-first-state
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
@@ -413,30 +432,38 @@
       )
   ))
 
-(defn update-prob-by-word
-  [lexicon state prob word total]
-  (let [word-info (get-word-info lexicon word)]
-    (/
-      (* prob (get word-info
-                   (get sym-to-pos-lkup (:label (zp/node state)))
-                   0.0))
-      total)
-    )
-  )
-
 (defn update-state-probs-for-word
-  [lexicon states-and-probs word]
-  (renormalize-found-states
-    (let [total (reduce + (vals (get-word-info lexicon word)))]
+  [pcfg states-and-probs word]
+  ; TODO: not amazing, this trick relies on the knowledge that
+  ; synset nodes have only one parent
+  (let [word-entry (get pcfg word)
+        word-parent-info (group-by
+                           #(-> %1 last :parents keys first)
+                           (map (fn [t] [t (get pcfg t)])
+                                (-> word-entry :parents keys)))]
+    (->> states-and-probs
       (reduce-kv
         (fn [new-states-and-probs state prob]
-          (assoc
-            new-states-and-probs
-            (append-and-go-to-child state (tree-node word nil))
-            (update-prob-by-word lexicon state prob word total)))
+          (let [cur-label (-> state zp/node :label)]
+            (reduce
+              (fn [new-states-and-probs [syn-name synset-entry]]
+                (assoc new-states-and-probs
+                  (->
+                    state
+                    (append-and-go-to-child
+                      (tree-node syn-name [] (:features synset-entry)))
+                    (append-and-go-to-child
+                      (tree-node word [] (:features word-entry))))
+                  (* prob (/ (get (:parents word-entry) syn-name)
+                             (:parents_total word-entry)))
+                  )
+                )
+              new-states-and-probs
+              (get word-parent-info cur-label))))
         (priority-map-gt)
-        states-and-probs
-        ))))
+        )
+      renormalize-found-states
+      )))
 
 (defn update-prob-for-null-word
   [pcfg state prob]

@@ -67,7 +67,16 @@
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP")) {"$S" 4.0}))
-  (is (= (get-in compiled-pcfg-for-test ["face" :parents]) {"$N" 3.0, "$V" 2.0}))
+  (is (= (get-in compiled-pcfg-for-test ["face" :parents])
+         {"face.n.01" 3.0, "face.v.01" 2.0}))
+  (is (= (map #(-> %1 :elements first)
+              (get-in compiled-pcfg-for-test ["$N" :productions]))
+         '("person.n.01" "face.n.01" "cool.n.01")))
+  (is (= (->> (get-in compiled-pcfg-for-test ["$N" :productions])
+              (filter #(= "person.n.01" (first (:elements %1))))
+              first
+              :count)
+         7.0))
   (is (= (get-in compiled-pcfg-for-test ["face" :parents_total]) 5.0))
   (is (= (get-in compiled-pcfg-for-test ["$N" :lex-node]) true))
   (is (= (get-in compiled-pcfg-for-test ["$NP" :lex-node]) nil))
@@ -188,8 +197,10 @@
                  "$NP"
                  [(tree-node
                     "$N"
-                    [(tree-node "face" nil)])])])]
-    (-> raw mk-traversable-tree zp/down zp/down zp/down)))
+                    [(tree-node
+                       "face.n.01"
+                       [(tree-node "face" nil)])])])])]
+    (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state1
   (let [raw (tree-node
@@ -198,8 +209,10 @@
                  "$NP"
                  [(tree-node
                     "$N"
-                    [(tree-node "cool" nil)])])])]
-    (-> raw mk-traversable-tree zp/down zp/down zp/down)))
+                    [(tree-node
+                       "cool.n.01"
+                       [(tree-node "cool" nil)])])])])]
+    (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state2
   (let [raw (tree-node
@@ -210,8 +223,10 @@
                     "$AP"
                     [(tree-node
                        "$A"
-                       [(tree-node "cool" nil)])])])])]
-    (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
+                       [(tree-node
+                          "cool.a.01"
+                          [(tree-node "cool" nil)])])])])])]
+    (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down zp/down)))
 
 (deftest test-infer-initial-possible-states
   (is (=
@@ -226,21 +241,29 @@
   )
 
 (def pre-state-1
-  (zp/edit (zp/remove ambiguous-inferred-state1) #(tree-node (:label %1) [])))
+  (zp/edit (-> ambiguous-inferred-state1 zp/remove zp/remove)
+           #(tree-node (:label %1) [])))
 
 (def pre-state-2
-  (zp/edit (zp/remove ambiguous-inferred-state2) #(tree-node (:label %1) [])))
+  (zp/edit (-> ambiguous-inferred-state2 zp/remove zp/remove)
+           #(tree-node (:label %1) [])))
 
 (deftest test-update-state-probs-for-word
   (is (= (update-state-probs-for-word
-           compiled-lexicon-for-test
+           compiled-pcfg-for-test
            (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
            "cool")
          (priority-map-gt
            ; need to append rather than use ambiguous-inferred-stateX b/c need
            ; the changed flag to be set for equality to work.
-           (append-and-go-to-child pre-state-1 (tree-node "cool" nil)) 0.2
-           (append-and-go-to-child pre-state-2 (tree-node "cool" nil)) 0.8))))
+           (-> pre-state-1
+               (append-and-go-to-child (tree-node "cool.n.01" []))
+               (append-and-go-to-child (tree-node "cool" nil)))
+           0.2
+           (-> pre-state-2
+               (append-and-go-to-child (tree-node "cool.a.01" []))
+               (append-and-go-to-child (tree-node "cool" nil)))
+           0.8))))
 
 (def good-parse-for-eos1
   (-> ambiguous-inferred-state1
