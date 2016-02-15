@@ -336,53 +336,35 @@
 
 (deftest test-learn-from-parse
   (let [parses (reformat-states-as-parses {good-parse-for-eos1 0.75 good-parse-for-eos2 0.25})
-        first-learn (apply learn-from-parse
-                      [compiled-pcfg-for-test compiled-lexicon-for-test]
+        learned-pcfg1 (apply learn-from-parse
+                      compiled-pcfg-for-test
                       (first parses))
-        learned-pcfg1 (first first-learn)
-        learned-lexicon1 (nth first-learn 1)
-        second-learn (apply learn-from-parse
-                            first-learn
-                            (-> parses rest first))
-        learned-pcfg2 (first second-learn)
-        learned-lexicon2 (nth second-learn 1)
+        learned-pcfg2 (apply learn-from-parse
+                             learned-pcfg1
+                             (-> parses rest first))
         ]
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$S" :productions]))) 4.75))
     (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$NP" :productions]))) 2.05))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$AP" :productions]))) 0.5)) ; should not change
-    (is (= (get learned-lexicon1 :totals) {"r" 2.0, "a" 7.0, "n" 12.75, "v" 3.75}))
-    (is (= (get learned-lexicon1 "face") {"n" 3.0, "v" 2.75}))
-    (is (= (get learned-lexicon1 "chase") {"v" 1.0}))
-    (is (= (get learned-lexicon2 "chase") {"v" 1.25}))
-    (is (= (reduce + (vals (:totals learned-lexicon2)))
-           (reduce #(+ %1 (reduce + (vals %2)))
-                   0.0
-                   (vals (dissoc learned-lexicon2 :totals)))))
   ))
 
 (deftest test-parse-and-learn-sentence
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-for-test
-                       compiled-lexicon-for-test
                        '("cool" "face"))
-        [new-pcfg new-lexicon parses] parse-result]
+        [new-pcfg parses] parse-result]
     (is (= (get-in new-pcfg ["$N" :parents "$NP"]) 2.0))
     (is (= (count parses) 1))
-    (is (= (+ 2.0 (reduce + (-> compiled-lexicon-for-test :totals vals)))
-           (reduce + (-> new-lexicon :totals vals))))
     )
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-for-test
-                       compiled-lexicon-for-test
                        '("cool" "cool" "face"))
-        [new-pcfg new-lexicon parses] parse-result]
+        [new-pcfg parses] parse-result]
     ; the ["$AP" "$N"] production does not contribute to the $N parents
-    (is (= (get-in new-pcfg ["$N" :parents "$NP"]) 1.1724137931034484))
+    (is (approx= (get-in new-pcfg ["$N" :parents "$NP"]) 1.1724137931034484))
     (is (= (reduce + (map :count (get-in new-pcfg ["$S" :productions]))) 5.0))
     (is (= (count parses) 2))
-    (is (= (+ 3.0 (reduce + (-> compiled-lexicon-for-test :totals vals)))
-           (reduce + (-> new-lexicon :totals vals))))
     )
   )
 

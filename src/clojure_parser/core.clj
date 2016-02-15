@@ -570,41 +570,29 @@
     )
   )
 
-(defn update-lexicon-counts
-  [lexicon cur-node prob]
-  (let [word (:label (first (:children cur-node)))
-        lex-pos-sym (get sym-to-pos-lkup (:label cur-node))]
-    (-> lexicon
-        (update-in [word lex-pos-sym] #(+ %1 prob))
-        (update-in [:totals lex-pos-sym] #(+ %1 prob)))
-    ))
-
 (defn learn-from-parse
-  [[pcfg lexicon] parse prob]
+  [pcfg parse prob]
   (loop [frontier [parse]
-         pcfg pcfg
-         lexicon lexicon]
+         pcfg pcfg]
     (if (empty? frontier)
-      [pcfg, lexicon]
+      pcfg
       (let [cur-node (peek frontier)]
         (if (:lex-node (get pcfg (:label cur-node)))
           (recur
             (pop frontier)
-            (update-pcfg-count pcfg cur-node prob)
-            (update-lexicon-counts lexicon cur-node prob))
+            (update-pcfg-count pcfg cur-node prob))
           (recur
             (into (pop frontier) (:children cur-node))
-            (update-pcfg-count pcfg cur-node prob)
-            lexicon)))))
+            (update-pcfg-count pcfg cur-node prob))))))
   )
 
 (defn learn-from-parses
   "Takes parses weighted by their probability, a pcfg, and
    a lexicon. Returns a newly weighted pcfg and lexicon"
-  [pcfg lexicon parses-to-probs]
+  [pcfg parses-to-probs]
   (reduce-kv
     learn-from-parse
-    [pcfg lexicon]
+    pcfg
     parses-to-probs
     )
   )
@@ -624,7 +612,7 @@
   )
 
 (defn parse-and-learn-sentence
-  [pcfg lexicon sentence]
+  [pcfg sentence]
   (let [starting-states
         (infer-initial-possible-states pcfg  (first sentence))]
     (loop [sentence (rest sentence)
@@ -633,15 +621,15 @@
         (let [parses
               (reformat-states-as-parses
                 (update-state-probs-for-eos pcfg current-states))
-              [pcfg lexicon] (learn-from-parses pcfg lexicon parses)]
-          [pcfg lexicon parses]
+              pcfg (learn-from-parses pcfg parses)]
+          [pcfg parses]
           )
         (recur
           (rest sentence)
           (let [next-possible-states
                 (infer-possible-states-mult pcfg current-states)]
             (update-state-probs-for-word
-              lexicon
+              pcfg
               next-possible-states
               (first sentence))))))
     )
