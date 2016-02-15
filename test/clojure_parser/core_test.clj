@@ -271,8 +271,10 @@
       zp/up
       zp/up
       zp/up
+      zp/up
       (append-and-go-to-child (tree-node "$VP" []))
       (append-and-go-to-child (tree-node "$V" []))
+      (append-and-go-to-child (tree-node "face.v.01" []))
       (append-and-go-to-child (tree-node "face" nil))))
 
 (def good-parse-for-eos2
@@ -280,15 +282,19 @@
       zp/up
       zp/up
       zp/up
+      zp/up
       (append-and-go-to-child (tree-node "$VP" []))
       (append-and-go-to-child (tree-node "$V" []))
+      (append-and-go-to-child (tree-node "chase.v.01" []))
       (append-and-go-to-child (tree-node "chase" nil))))
 
 (def bad-parse-for-eos
   (-> ambiguous-inferred-state2
       zp/up
       zp/up
+      zp/up
       (append-and-go-to-child (tree-node "$N" []))
+      (append-and-go-to-child (tree-node "cool.n.01" []))
       (append-and-go-to-child (tree-node "cool" nil))))
 
 (deftest test-update-probs-for-eos

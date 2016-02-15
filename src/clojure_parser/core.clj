@@ -593,8 +593,7 @@
             (update-pcfg-count pcfg cur-node prob)
             (update-lexicon-counts lexicon cur-node prob))
           (recur
-            ; don't consider nodes with nil children (leaf nodes)
-            (into (pop frontier) (filter :children (:children cur-node)))
+            (into (pop frontier) (:children cur-node))
             (update-pcfg-count pcfg cur-node prob)
             lexicon)))))
   )
