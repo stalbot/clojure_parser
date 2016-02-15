@@ -303,7 +303,10 @@
   (let [total (apply + (vals pri-map-trans))]
     (reduce-kv
       (fn [pri-map-trans state prob]
-        (assoc pri-map-trans state (/ prob total)))
+        (if (== prob 0.0)
+          pri-map-trans
+          (assoc pri-map-trans state (/ prob total))
+          ))
       (priority-map-gt)
       pri-map-trans
       )))
@@ -432,6 +435,11 @@
       )
   ))
 
+(defn features-match
+  [features1 features2]
+  (every? (fn [[k v]] (= (get features2 k) v)) features1)
+  )
+
 (defn update-state-probs-for-word
   [pcfg states-and-probs word]
   ; TODO: not amazing, this trick relies on the knowledge that
@@ -447,21 +455,24 @@
           (let [cur-label (-> state zp/node :label)]
             (reduce
               (fn [new-states-and-probs [syn-name synset-entry]]
-                (assoc new-states-and-probs
-                  (->
-                    state
-                    (append-and-go-to-child
-                      (tree-node
-                        syn-name
-                        []
-                        (merge (:features synset-entry) (:features word-entry))
-                        ))
-                    (append-and-go-to-child
-                      (tree-node word nil (:features word-entry))))
-                  (* prob (/ (get (:parents word-entry) syn-name)
-                             (:parents_total word-entry)))
-                  )
-                )
+                (let [merged-features (merge (:features synset-entry)
+                                             (:features word-entry))]
+                  (assoc new-states-and-probs
+                    (->
+                      state
+                      (append-and-go-to-child
+                        (tree-node syn-name [] merged-features))
+                      (append-and-go-to-child
+                        (tree-node word nil (:features word-entry))))
+                    (* prob
+                       (/ (get (:parents word-entry) syn-name)
+                         (:parents_total word-entry))
+                       (if (features-match (-> state zp/node :features)
+                                           merged-features)
+                         1.0
+                         0.0))
+                    )
+                  ))
               new-states-and-probs
               (get word-parent-info cur-label))))
         (priority-map-gt)

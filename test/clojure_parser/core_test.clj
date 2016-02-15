@@ -80,6 +80,8 @@
   (is (= (get-in compiled-pcfg-for-test ["face" :parents_total]) 5.0))
   (is (= (get-in compiled-pcfg-for-test ["$N" :lex-node]) true))
   (is (= (get-in compiled-pcfg-for-test ["$NP" :lex-node]) nil))
+  (is (= (get-in compiled-pcfg-for-test ["faces" :features]) {"plural" true}))
+  (is (= (get-in compiled-pcfg-for-test ["face" :features]) {"plural" false}))
   (is (= (get-in compiled-pcfg-for-test ["face" :lex-node]) nil))
   (is (approx= (:parents_total (get compiled-pcfg-for-test "$NP")) 4.0))
   ; TODO: resolve the parent problem
@@ -368,3 +370,59 @@
     )
   )
 
+(def lexicon-for-test-with-better-features
+  (assoc-in lexicon-for-test ["chase.v.01" :lemmas 0 :features "plural"] true))
+
+(def compiled-pcfg-with-better-features
+  (build-operational-pcfg (lexicalize-pcfg
+                            pcfg-for-test
+                            lexicon-for-test-with-better-features)))
+
+(deftest test-update-state-probs-for-word-with-features
+  (let [in-progress-parse-with-bad-feature
+        (-> good-parse-for-eos1
+            zp/remove
+            zp/remove
+            (zp/edit assoc :children [])
+            (zp/edit assoc-in [:features "plural"] false))
+        in-progress-parse-with-good-feature
+        (-> good-parse-for-eos1
+            zp/remove
+            zp/remove
+            (zp/edit assoc :children [])
+            (zp/edit assoc-in [:features "plural"] true))
+        updated (update-state-probs-for-word
+                  compiled-pcfg-with-better-features
+                  {in-progress-parse-with-bad-feature 0.5
+                   in-progress-parse-with-good-feature 0.5}
+                  "chase"
+                  )]
+    (is (= (count updated) 1))
+    (is (= (first (vals updated)) 1.0))
+    (is (= (-> updated keys first zp/node :features (get "plural")) true))
+    (is (= (-> updated keys first zp/up zp/node :features (get "plural"))
+           true))
+    (is (= (-> updated keys first zp/up zp/up zp/node :features (get "plural"))
+           true))
+    ))
+
+(deftest test-parse-with-real-features
+  (let [parse-result (parse-and-learn-sentence
+                       compiled-pcfg-with-better-features
+                       '("faces" "chase"))
+        [new-pcfg parses] parse-result]
+    (is (= (count parses) 1))
+    (is (= (-> parses first first
+               :children first :children first :children first :children first
+               :features)
+           {"plural" true}) )
+    (is (= (-> parses first first :features) {}))  ; should not get $S node as plural
+    (is (= (-> parses first first :children first :features) {"plural" true}))
+    )
+  (let [parse-result (parse-and-learn-sentence
+                       compiled-pcfg-with-better-features
+                       '("face" "chase"))
+        [new-pcfg parses] parse-result]
+    (is (= (count parses) 0))
+    )
+  )
