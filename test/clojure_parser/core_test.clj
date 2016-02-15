@@ -249,21 +249,22 @@
            #(tree-node (:label %1) [])))
 
 (deftest test-update-state-probs-for-word
-  (is (= (update-state-probs-for-word
-           compiled-pcfg-for-test
-           (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
-           "cool")
-         (priority-map-gt
-           ; need to append rather than use ambiguous-inferred-stateX b/c need
-           ; the changed flag to be set for equality to work.
+  (let [updated (update-state-probs-for-word
+                  compiled-pcfg-for-test
+                  (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
+                  "cool")]
+    (is (= (-> updated keys last zp/root)
            (-> pre-state-1
                (append-and-go-to-child (tree-node "cool.n.01" []))
-               (append-and-go-to-child (tree-node "cool" nil)))
-           0.2
+               (append-and-go-to-child (tree-node "cool" nil))
+               zp/root)))
+    (is (= (-> updated keys first zp/root)
            (-> pre-state-2
                (append-and-go-to-child (tree-node "cool.a.01" []))
-               (append-and-go-to-child (tree-node "cool" nil)))
-           0.8))))
+               (append-and-go-to-child (tree-node "cool" nil))
+               zp/root)))
+    (is (= (vals updated) [0.8 0.2]))
+    ))
 
 (def good-parse-for-eos1
   (-> ambiguous-inferred-state1

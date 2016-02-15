@@ -451,9 +451,13 @@
                   (->
                     state
                     (append-and-go-to-child
-                      (tree-node syn-name [] (:features synset-entry)))
+                      (tree-node
+                        syn-name
+                        []
+                        (merge (:features synset-entry) (:features word-entry))
+                        ))
                     (append-and-go-to-child
-                      (tree-node word [] (:features word-entry))))
+                      (tree-node word nil (:features word-entry))))
                   (* prob (/ (get (:parents word-entry) syn-name)
                              (:parents_total word-entry)))
                   )
