@@ -1,8 +1,7 @@
 (ns clojure-parser.core-test
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer :all]
-            [clojure.zip :as zp])
-  (:import (clojure_parser.core TreeNode)))
+            [clojure.zip :as zp]))
 
 (def pcfg-for-test
   {
@@ -44,17 +43,12 @@
   (= (format "%.8f" num1) (format "%.8f" num2)))
 
 (deftest test-compiled-lexicon-is-well-formatted
-  (is (= 12.0 (apply + (map
-                        (fn [d] (or (get d "n") 0.0))
-                        (for
-                          [[k v] compiled-lexicon-for-test]
-                          (if (= k :totals) {} v))))))
-  (is (= 12.0 (get-in compiled-lexicon-for-test [:totals "n"])))
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
-  (is (= 2.0 (get-in compiled-lexicon-for-test [:totals "r"])))
-  (is (= (get-in compiled-lexicon-for-test ["face" "v"]) 2.0))
-  (is (= (get-in compiled-lexicon-for-test ["face" "n"]) 3.0))
-  (is (= (get-in compiled-lexicon-for-test ["individual" "n"]) 2.0)))
+  (is (= (get-in compiled-lexicon-for-test ["face" "face.v.01.face"]) 2.0))
+  (is (= (get-in compiled-lexicon-for-test ["face" "face.n.01.face"]) 3.0))
+  (is (= (get-in compiled-lexicon-for-test
+                 ["individual" "person.n.01.individual"])
+         2.0)))
 
 (deftest test-compiled-pcfg-is-well-formatted
   (is (= (get-in compiled-pcfg-for-test ["$N" :productions_total]) 12.0))
@@ -67,8 +61,6 @@
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP")) {"$S" 4.0}))
-  (is (= (get-in compiled-pcfg-for-test ["face" :parents])
-         {"face.n.01" 3.0, "face.v.01" 2.0}))
   (is (= (map #(-> %1 :elements first)
               (get-in compiled-pcfg-for-test ["$N" :productions]))
          '("person.n.01" "face.n.01" "cool.n.01")))
@@ -77,11 +69,16 @@
               first
               :count)
          7.0))
-  (is (= (get-in compiled-pcfg-for-test ["face" :parents_total]) 5.0))
   (is (= (get-in compiled-pcfg-for-test ["$N" :lex-node]) true))
   (is (= (get-in compiled-pcfg-for-test ["$NP" :lex-node]) nil))
-  (is (= (get-in compiled-pcfg-for-test ["faces" :features]) {"plural" true}))
-  (is (= (get-in compiled-pcfg-for-test ["face" :features]) {"plural" false}))
+  (is (= (get-in compiled-pcfg-for-test ["face.n.01.faces" :features])
+         {"plural" true}))
+  (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :features])
+         {"plural" false}))
+  (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents_total])
+         3.0))
+  (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents])
+         {"face.n.01" 3.0}))
   (is (= (get-in compiled-pcfg-for-test ["face" :lex-node]) nil))
   (is (approx= (:parents_total (get compiled-pcfg-for-test "$NP")) 4.0))
   ; TODO: resolve the parent problem
@@ -201,7 +198,10 @@
                     "$N"
                     [(tree-node
                        "face.n.01"
-                       [(tree-node "face" nil)])])])])]
+                       [(tree-node "face.n.01.face" nil {"plural" false})]
+                       {"plural" false})]
+                    {"plural" false})]
+                 {"plural" false})])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state1
@@ -213,7 +213,7 @@
                     "$N"
                     [(tree-node
                        "cool.n.01"
-                       [(tree-node "cool" nil)])])])])]
+                       [(tree-node "cool.n.01.cool" nil)])])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state2
@@ -227,14 +227,20 @@
                        "$A"
                        [(tree-node
                           "cool.a.01"
-                          [(tree-node "cool" nil)])])])])])]
+                          [(tree-node "cool.a.01.cool" nil)])])])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down zp/down)))
 
 (deftest test-infer-initial-possible-states
   (is (=
-        (infer-initial-possible-states compiled-pcfg-for-test  "face")
+        (infer-initial-possible-states
+          compiled-pcfg-for-test
+          compiled-lexicon-for-test
+          "face")
         (priority-map-gt first-inferred-state 1.0)))
-  (let [inferred (infer-initial-possible-states compiled-pcfg-for-test  "cool")]
+  (let [inferred (infer-initial-possible-states
+                   compiled-pcfg-for-test
+                   compiled-lexicon-for-test
+                   "cool")]
     (is (=
           (keys inferred)
           [ambiguous-inferred-state2 ambiguous-inferred-state1]))
@@ -253,17 +259,18 @@
 (deftest test-update-state-probs-for-word
   (let [updated (update-state-probs-for-word
                   compiled-pcfg-for-test
+                  compiled-lexicon-for-test
                   (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
                   "cool")]
     (is (= (-> updated keys last zp/root)
            (-> pre-state-1
                (append-and-go-to-child (tree-node "cool.n.01" []))
-               (append-and-go-to-child (tree-node "cool" nil))
+               (append-and-go-to-child (tree-node "cool.n.01.cool" nil))
                zp/root)))
     (is (= (-> updated keys first zp/root)
            (-> pre-state-2
                (append-and-go-to-child (tree-node "cool.a.01" []))
-               (append-and-go-to-child (tree-node "cool" nil))
+               (append-and-go-to-child (tree-node "cool.a.01.cool" nil))
                zp/root)))
     (is (= (vals updated) [0.8 0.2]))
     ))
@@ -277,7 +284,7 @@
       (append-and-go-to-child (tree-node "$VP" []))
       (append-and-go-to-child (tree-node "$V" []))
       (append-and-go-to-child (tree-node "face.v.01" []))
-      (append-and-go-to-child (tree-node "face" nil))))
+      (append-and-go-to-child (tree-node "face.v.01.face" nil))))
 
 (def good-parse-for-eos2
   (-> ambiguous-inferred-state1
@@ -288,7 +295,7 @@
       (append-and-go-to-child (tree-node "$VP" []))
       (append-and-go-to-child (tree-node "$V" []))
       (append-and-go-to-child (tree-node "chase.v.01" []))
-      (append-and-go-to-child (tree-node "chase" nil))))
+      (append-and-go-to-child (tree-node "chase.v.01.chase" nil))))
 
 (def bad-parse-for-eos
   (-> ambiguous-inferred-state2
@@ -297,7 +304,7 @@
       zp/up
       (append-and-go-to-child (tree-node "$N" []))
       (append-and-go-to-child (tree-node "cool.n.01" []))
-      (append-and-go-to-child (tree-node "cool" nil))))
+      (append-and-go-to-child (tree-node "cool.n.01.cool" nil))))
 
 (deftest test-update-probs-for-eos
   (let [updated (update-state-probs-for-eos
@@ -354,6 +361,7 @@
 (deftest test-parse-and-learn-sentence
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-for-test
+                       compiled-lexicon-for-test
                        '("cool" "face"))
         [new-pcfg parses] parse-result]
     (is (= (get-in new-pcfg ["$N" :parents "$NP"]) 2.0))
@@ -361,6 +369,7 @@
     )
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-for-test
+                       compiled-lexicon-for-test
                        '("cool" "cool" "face"))
         [new-pcfg parses] parse-result]
     ; the ["$AP" "$N"] production does not contribute to the $N parents
@@ -372,6 +381,9 @@
 
 (def lexicon-for-test-with-better-features
   (assoc-in lexicon-for-test ["chase.v.01" :lemmas 0 :features "plural"] true))
+
+(def compiled-lex-with-better-features
+  (make-lexical-lkup lexicon-for-test-with-better-features))
 
 (def compiled-pcfg-with-better-features
   (build-operational-pcfg (lexicalize-pcfg
@@ -393,6 +405,7 @@
             (zp/edit assoc-in [:features "plural"] true))
         updated (update-state-probs-for-word
                   compiled-pcfg-with-better-features
+                  compiled-lex-with-better-features
                   {in-progress-parse-with-bad-feature 0.5
                    in-progress-parse-with-good-feature 0.5}
                   "chase"
@@ -409,6 +422,7 @@
 (deftest test-parse-with-real-features
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-with-better-features
+                       compiled-lex-with-better-features
                        '("faces" "chase"))
         [new-pcfg parses] parse-result]
     (is (= (count parses) 1))
@@ -416,13 +430,24 @@
                :children first :children first :children first :children first
                :features)
            {"plural" true}) )
-    (is (= (-> parses first first :features) {}))  ; should not get $S node as plural
+    (is (= (-> parses first first :features) {"plural" true}))
     (is (= (-> parses first first :children first :features) {"plural" true}))
+    (is (> (get-in new-pcfg ["face.n.01.faces" :parents "face.n.01"])
+           (get-in
+             compiled-pcfg-with-better-features
+             ["face.n.01.faces" :parents "face.n.01"])))
+    (is (= (get-in new-pcfg ["face.n.01.face" :parents "face.n.01"])
+           (get-in
+             compiled-pcfg-with-better-features
+             ["face.n.01.face" :parents "face.n.01"])))
     )
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-with-better-features
+                       compiled-lex-with-better-features
                        '("face" "chase"))
         [new-pcfg parses] parse-result]
     (is (= (count parses) 0))
+    ; nothing should have happened
+    (is (= new-pcfg compiled-pcfg-with-better-features))
     )
   )

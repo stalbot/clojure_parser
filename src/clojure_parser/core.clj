@@ -18,8 +18,6 @@
    "r" "$R"
    })
 
-(def sym-to-pos-lkup (into {} (for [[k v] pos-to-sym-lkup] [v k])))
-
 (defn normalize-pcfg [pcfg]
   (reduce-kv
     (fn
@@ -87,41 +85,28 @@
         ))))
 
 
-(defn normalize-lexical-lkup
-  [lexical-lkup]
-  (let
-    [pos-total-lkup
-     (reduce
-       (fn [pos-lkup lex-lkup]
-         (reduce-kv
-           (fn [pos-lkup pos count]
-             (update pos-lkup pos #(+ (or %1 0) count)))
-           lex-lkup
-           pos-lkup
-           ))
-       {}
-       (vals lexical-lkup)
-       )]
-    (assoc lexical-lkup :totals pos-total-lkup)))
+(defn make-lem-pcfg-name
+  [syn-name surface-word]
+  (str syn-name "." surface-word))
 
 (defn make-lexical-lkup [lexicon]
-  (normalize-lexical-lkup
-    (reduce
-      (fn [lkup node]
-        (reduce
-          (fn
-            [lkup lem]
-            (update-in
-              lkup
-              [(:name lem) (:pos node)]
-              (fn [old new] (+ (or old 0.0) new))
-              (:count lem)))
-          lkup
-          (:lemmas node)
-          ))
-      {}
-      (vals lexicon)
-      )))
+  (reduce-kv
+    (fn [lkup syn-name node]
+      (reduce
+        (fn
+          [lkup lem]
+          (update-in
+            lkup
+            (let [word (:name lem)]
+              [word (make-lem-pcfg-name syn-name word)])
+            (fn [old new] (+ (or old 0.0) new))
+            (:count lem)))
+        lkup
+        (:lemmas node)
+        ))
+    {}
+    lexicon
+    ))
 
 (defn group-lexicon-by-cat [lexicon]
   (reduce-kv
@@ -141,14 +126,20 @@
   {:elements [syn-name] :count count})
 
 (defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
-     (reduce
-       (fn [lexicalizing-pcfg lemma-entry]
-         (assoc-in
+   (reduce
+     (fn [lexicalizing-pcfg lemma-entry]
+       (let [surface-word (:name lemma-entry)
+             lemma-entry-name (make-lem-pcfg-name syn-name surface-word)]
+         (->
            lexicalizing-pcfg
-           [(:name lemma-entry) :features]
-           (get lemma-entry :features {})))
-       lexicalizing-pcfg
-       (get-in lexicon [syn-name :lemmas])))
+           (assoc-in
+             [lemma-entry-name :features]
+             (get lemma-entry :features {}))
+           (assoc-in
+             [lemma-entry-name :word]
+             surface-word))))
+     lexicalizing-pcfg
+     (get-in lexicon [syn-name :lemmas])))
 
 (defn add-word-leaves
   [lexicalizing-pcfg lexicon syns-to-totals]
@@ -160,7 +151,8 @@
         (assoc-in
           [syn-name :productions]
           (map (fn [lemma-entry]
-                 {:elements [(:name lemma-entry)] :count (:count lemma-entry)})
+                 {:elements [(make-lem-pcfg-name syn-name (:name lemma-entry))]
+                  :count (:count lemma-entry)})
                (get-in lexicon [syn-name :lemmas])))
         (add-leaves-as-nodes lexicon syn-name)
         ))
@@ -249,7 +241,7 @@
             (apply dissoc
                    (:features current-node)
                    (get-in pcfg
-                           [(:label new-state)
+                           [(:label current-node)
                             :isolate_features]))))
         (zp/node current-state))))
 
@@ -273,6 +265,8 @@
         next-zipped-states
         (reduce
           (fn [next-zipped-states production]
+            (println "node" (:label current-node) "node-features" (:features current-node))
+            (println "features" features)
             (conj
               next-zipped-states
               [(append-and-go-to-child
@@ -285,6 +279,7 @@
                     []
                     (apply dissoc
                            features
+                           ; TODO: revisit, may want to :isolate feature on current-node, rather than child
                            (get-in pcfg [new-child-sym :isolate_features])))))
                (* current-prob (/ (:count production) total-production-prob))]
               )
@@ -362,13 +357,15 @@
            (:features current-state)
            (get-in pcfg [parent-sym :isolate_features]))))
 
-(defn create-first-state
+(defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
-  [pcfg word]
-  (priority-map-gt
-    (tree-node word nil (get-in pcfg [word :features] {}))
-    1.0))
+  [pcfg lexical-lkup word]
+  (into
+    (priority-map-gt)
+    (for
+      [[lem-name prob] (get lexical-lkup word)]
+      [(tree-node lem-name nil (get-in pcfg [lem-name :features] {})) prob])))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -401,9 +398,9 @@
   "From a start word, builds all the initial states needed for the sentence
   parser. Stops at *max-states* or *min-prob-ratio*. Assumes `lexicon` is
   the result of a call to `make-lexical-lkup`"
-  [pcfg first-word]
+  [pcfg lexical-lkup first-word]
   (finalize-initial-states
-    (loop [frontier (create-first-state pcfg first-word)
+    (loop [frontier (create-first-states pcfg lexical-lkup first-word)
            found (priority-map-gt)]
       (let [[current-state current-prob] (peek frontier)
             [frontier found]
@@ -440,45 +437,60 @@
   (every? (fn [[k v]] (= (get features2 k) v)) features1)
   )
 
-(defn update-state-probs-for-word
-  [pcfg states-and-probs word]
+(defn update-state-probs-for-lemma
+  [pcfg states-and-probs lem-name adjust-prob]
   ; TODO: not amazing, this trick relies on the knowledge that
   ; synset nodes have only one parent
-  (let [word-entry (get pcfg word)
+  (let [word-entry (get pcfg lem-name)
         word-parent-info (group-by
                            #(-> %1 last :parents keys first)
                            (map (fn [t] [t (get pcfg t)])
                                 (-> word-entry :parents keys)))]
-    (->> states-and-probs
-      (reduce-kv
-        (fn [new-states-and-probs state prob]
-          (let [cur-label (-> state zp/node :label)]
-            (reduce
-              (fn [new-states-and-probs [syn-name synset-entry]]
-                (let [merged-features (merge (:features synset-entry)
-                                             (:features word-entry))]
-                  (assoc new-states-and-probs
-                    (->
-                      state
-                      (append-and-go-to-child
-                        (tree-node syn-name [] merged-features))
-                      (append-and-go-to-child
-                        (tree-node word nil (:features word-entry))))
-                    (* prob
-                       (/ (get (:parents word-entry) syn-name)
-                         (:parents_total word-entry))
-                       (if (features-match (-> state zp/node :features)
-                                           merged-features)
-                         1.0
-                         0.0))
-                    )
-                  ))
-              new-states-and-probs
-              (get word-parent-info cur-label))))
-        (priority-map-gt)
-        )
-      renormalize-found-states
-      )))
+    (reduce-kv
+      (fn [new-states-and-probs state prob]
+        (let [cur-label (-> state zp/node :label)]
+          (reduce
+            (fn [new-states-and-probs [syn-name synset-entry]]
+              (let [merged-features (merge (:features synset-entry)
+                                           (:features word-entry))]
+                (assoc new-states-and-probs
+                  (->
+                    state
+                    (append-and-go-to-child
+                      (tree-node syn-name [] merged-features))
+                    (append-and-go-to-child
+                      (tree-node lem-name nil (:features word-entry))))
+                  (* prob
+                     (/ (get (:parents word-entry) syn-name)
+                       (:parents_total word-entry))
+                     (if (features-match (-> state zp/node :features)
+                                         merged-features)
+                       1.0
+                       0.0)
+                     adjust-prob)
+                  )
+                ))
+            new-states-and-probs
+            (get word-parent-info cur-label))))
+      (priority-map-gt)
+      states-and-probs
+      )
+    ))
+
+(defn update-state-probs-for-word
+  [pcfg lexical-lkup states-and-probs word]
+  (->> word
+       (get lexical-lkup)
+       (map
+         (fn [[lem-name prob]]
+            (update-state-probs-for-lemma
+              pcfg
+              states-and-probs
+              lem-name
+              prob)))
+       (reduce #(merge-with + %1 %2))
+       renormalize-found-states)
+  )
 
 (defn update-prob-for-null-word
   [pcfg state prob]
@@ -524,17 +536,6 @@
       states-and-probs
       states-and-probs
       )))
-
-; TODO may no longer be needed
-(defn state-to-parse
-  "Goes from a 'state' to a 'parse'. Haven't really fully defined
-  what a parse is yet, so for now it's just a state backed up
-  to the top position for easy tree traversal."
-  [state]
-  (loop [state state]
-    (if (= (:label (zp/node state)) (start-sym))
-      state
-      (zp/up state))))
 
 (defn reformat-states-as-parses
   [states-and-probs]
@@ -588,13 +589,9 @@
     (if (empty? frontier)
       pcfg
       (let [cur-node (peek frontier)]
-        (if (:lex-node (get pcfg (:label cur-node)))
-          (recur
-            (pop frontier)
-            (update-pcfg-count pcfg cur-node prob))
-          (recur
-            (into (pop frontier) (:children cur-node))
-            (update-pcfg-count pcfg cur-node prob))))))
+        (recur
+          (into (pop frontier) (filter :children (:children cur-node)))
+          (update-pcfg-count pcfg cur-node prob)))))
   )
 
 (defn learn-from-parses
@@ -623,9 +620,9 @@
   )
 
 (defn parse-and-learn-sentence
-  [pcfg sentence]
+  [pcfg lexical-lkup sentence]
   (let [starting-states
-        (infer-initial-possible-states pcfg  (first sentence))]
+        (infer-initial-possible-states pcfg lexical-lkup (first sentence))]
     (loop [sentence (rest sentence)
            current-states starting-states]
       (if (empty? sentence)
@@ -641,6 +638,7 @@
                 (infer-possible-states-mult pcfg current-states)]
             (update-state-probs-for-word
               pcfg
+              lexical-lkup
               next-possible-states
               (first sentence))))))
     )
