@@ -217,10 +217,10 @@
     (-> with-child zp/down zp/rightmost)))
 
 (defn add-if-prod-match-found
-  [children info prod]
+  [children info index prod]
   (cond
     (= children (:elements prod))
-      (assoc info :match true)
+      (assoc info :match index)
     (sequence-is-extension children (:elements prod))
       (update info :extends #(conj %1 prod))
     :default
@@ -228,22 +228,54 @@
     )
   )
 
+(defn get-feature-node [pcfg node index]
+  (let [head (->> node :label (get pcfg) :productions #(get %1 index) :head)]
+  (if head
+    (->> node :children (filter #(= (:label %1) head)) )
+    (->> node :children last))))
+
 (defn get-parent-state
-  [pcfg current-state]
-  (-> current-state
-      zp/up
+  [pcfg current-state child-index]
+  (let [raw-parent (zp/up current-state)
+        feature-node (get-feature-node pcfg (zp/node raw-parent) child-index)]
+    (if raw-parent
       (zp/edit
-        (fn [new-state current-node]
+        raw-parent
+        (fn [new-state]
           (update
             new-state
             :features
             merge
             (apply dissoc
-                   (:features current-node)
+                   (:features feature-node)
                    (get-in pcfg
-                           [(:label current-node)
-                            :isolate_features]))))
-        (zp/node current-state))))
+                           [(:label feature-node)
+                            :isolate_features]))))))))
+
+(defn add-next-zip-state
+  [pcfg current-state num-children current-prob
+   total-production-prob next-zipped-states production]
+  (conj
+    next-zipped-states
+    [(append-and-go-to-child
+       current-state
+       ; NOTE: this empty vector rather than nil for children is meaningful ->
+       ; this is a list we intend to fill, rather than a leaf node without children
+       (let [new-child-sym (nth (:elements production) num-children)]
+         (tree-node
+           new-child-sym
+           []
+           (apply dissoc
+                  (if (or (= new-child-sym (:head production))
+                          (= (-> production :elements count)
+                             (- num-children 1)))
+                    (-> current-state zp/up zp/node :features)
+                    {})
+                  ; TODO: revisit, may want to :isolate feature on current-node, rather than child
+                  (get-in pcfg [new-child-sym :isolate_features])))))
+     (* current-prob (/ (:count production) total-production-prob))]
+    )
+  )
 
 (defn get-successor-states
   "Given a state and probability associated with it, and a set of productions
@@ -252,43 +284,29 @@
   ; TODO : this is the innermost of all loops, will need to be more optimized
   [pcfg current-state current-prob productions total-production-prob]
   (let [current-node (zp/node current-state)
-        children (if (:children current-node)
-                   (map :label (:children current-node))
-                   [])
-        features (:features current-node)
+        children (map :label (:children current-node))
         num-children (count children)
         match-info
-          (reduce
-            #(add-if-prod-match-found children %1 %2)
+          (reduce-kv
+            #(add-if-prod-match-found children %1 %2 %3)
             {:match nil, :extends []}
             productions)
         next-zipped-states
         (reduce
-          (fn [next-zipped-states production]
-            (println "node" (:label current-node) "node-features" (:features current-node))
-            (println "features" features)
-            (conj
-              next-zipped-states
-              [(append-and-go-to-child
-                current-state
-                ; NOTE: this empty vector rather than nil for children is meaningful ->
-                ; this is a list we intend to fill, rather than a leaf node without children
-                (let [new-child-sym (nth (:elements production) num-children)]
-                  (tree-node
-                    new-child-sym
-                    []
-                    (apply dissoc
-                           features
-                           ; TODO: revisit, may want to :isolate feature on current-node, rather than child
-                           (get-in pcfg [new-child-sym :isolate_features])))))
-               (* current-prob (/ (:count production) total-production-prob))]
-              )
-            )
+          #(add-next-zip-state
+            pcfg
+            current-state
+            num-children
+            current-prob
+            total-production-prob
+            %1
+            %2)
           []
           (:extends match-info)
           )
         ; Only search for the parent node if we have a node whose productions we've filled
-        parent (and (:match match-info) (get-parent-state pcfg current-state))
+        parent (let [m (:match match-info)]
+                 (and m (get-parent-state pcfg current-state m)))
         successor-states (if parent [[parent current-prob]] [])]
     (apply conj successor-states next-zipped-states)
     ))
@@ -614,7 +632,7 @@
         (map (fn [[k v]] [k (* v prior-prob)]))
         states-with-probs))
     (priority-map-gt)
-    (pmap
+    (map
       (fn [[state, prob]] [(infer-possible-states pcfg state) prob])
       current-states))
   )

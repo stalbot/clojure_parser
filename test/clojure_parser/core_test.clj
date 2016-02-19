@@ -16,7 +16,7 @@
                         {:elements ["$A"], :count 0.5}]}
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
                         {:elements ["$R"], :count 0.7}]}
-   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4}
+   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4, :head "$V"}
                         {:elements ["$V"], :count 0.6}]}
    })
 
@@ -450,4 +450,38 @@
     ; nothing should have happened
     (is (= new-pcfg compiled-pcfg-with-better-features))
     )
+  )
+
+(def more-realistic-pcfg
+  {
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+         :isolate_features ["plural" "person"]}
+   "$NP" {:productions [{:elements ["$AP" "$NN"], :count 0.3}
+                        {:elements ["$NN"], :count 0.7}]}
+   "$NN" {:productions [{:elements ["$N" "$N"], :count 0.1}
+                        {:elements ["$N"], :count 1.8}]}
+   "$AP" {:productions [{:elements ["$RP" "$AA"], :count 0.1}
+                        {:elements ["$AA"], :count 0.4}]}
+   "$AA" {:productions [{:elements ["$A" "$AA"], :count 0.3}
+                        {:elements ["$A"], :count 0.5}]}
+   "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
+                        {:elements ["$R"], :count 0.7}]}
+   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4}
+                        {:elements ["$V"], :count 0.6}]}
+   })
+
+(def compiled-more-realistic-pcfg
+  (build-operational-pcfg (lexicalize-pcfg
+                            more-realistic-pcfg
+                            lexicon-for-test-with-better-features)))
+
+(deftest test-some-larger-parses
+  (is (< 0 (count (last (parse-and-learn-sentence
+                          compiled-more-realistic-pcfg
+                          compiled-lex-with-better-features
+                          '("newly" "new" "cool" "faces" "chase" "faces"))))))
+  (is (< 0 (count (last (parse-and-learn-sentence
+                          compiled-more-realistic-pcfg
+                          compiled-lex-with-better-features
+                          '("faces" "chase" "newly" "cool" "person"))))))
   )
