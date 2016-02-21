@@ -1,7 +1,9 @@
 (ns clojure-parser.core-test
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer :all]
-            [clojure.zip :as zp]))
+            [clojure.zip :as zp]
+            [clojure.data :refer [diff]]
+            ))
 
 (def pcfg-for-test
   {
@@ -195,11 +197,11 @@
 
 (def pre-state-1
   (zp/edit (-> ambiguous-inferred-state1 zp/remove zp/remove)
-           #(tree-node-tst (:label %1) [])))
+           #(tree-node (:label %1) nil [])))
 
 (def pre-state-2
   (zp/edit (-> ambiguous-inferred-state2 zp/remove zp/remove)
-           #(tree-node-tst (:label %1) [])))
+           #(tree-node (:label %1) nil [])))
 
 (deftest test-update-state-probs-for-word
   (let [updated (update-state-probs-for-word
@@ -207,14 +209,16 @@
                   compiled-lexicon-for-test
                   (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
                   "cool")]
-    (is (> 0 (count updated)))
+    (is (< 0 (count updated)))
     (is (= (-> updated keys last zp/root)
            (-> pre-state-1
+               (zp/edit assoc :production {:elements ["cool.n.01"], :count 1.0})
                (append-and-go-to-child (tree-node-tst "cool.n.01" []))
                (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))
                zp/root)))
     (is (= (-> updated keys first zp/root)
            (-> pre-state-2
+               (zp/edit assoc :production {:elements ["cool.a.01"], :count 4.0})
                (append-and-go-to-child (tree-node-tst "cool.a.01" []))
                (append-and-go-to-child (tree-node-tst "cool.a.01.cool" nil))
                zp/root)))
@@ -269,39 +273,43 @@
          {(zp/root bad-parse-for-eos) 1.0})))
 
 (deftest test-update-pcfg-count
-  (let [updated (update-pcfg-count
+  (let [prod (get-in compiled-pcfg-for-test ["$NP" :productions 2])
+        updated (update-pcfg-count
                   compiled-pcfg-for-test
-                  (tree-node-tst "$NP" [(tree-node-tst "$N" nil)])
+                  (tree-node
+                    "$NP"
+                    prod
+                    [(tree-node "$N" nil nil)])
                   0.5)]
     (is (approx= (get-in updated ["$NP" :productions_total]) 1.8))
     (is (approx= (get-in updated ["$NP" :productions 2 :count]) 1.2))
-    (is (approx= (get-in updated ["$N" :parents "$NP"]) 1.5))
+    (is (approx= (get-in updated ["$N" :parents ["$NP" prod]]) 1.2))
     (is (approx= (get-in updated ["$N" :parents_total]) 1.5))
     )
-  (is (= (update-pcfg-count
-           compiled-pcfg-for-test
-           (tree-node-tst "$S" [(tree-node-tst "$NP" nil) (tree-node-tst "$VP" nil)])
-           0.5)
-         (-> compiled-pcfg-for-test
-             (assoc-in ["$S" :productions_total] 4.5)
-             (assoc-in ["$S" :productions 0 :count] 4.5)
-             (assoc-in ["$NP" :parents_total] 4.5)
-             (assoc-in ["$NP" :parents "$S"] 4.5))))
+  (let [updated (update-pcfg-count
+                  compiled-pcfg-for-test
+                  (tree-node-tst "$S" [(tree-node-tst "$NP" nil) (tree-node-tst "$VP" nil)])
+                  0.5)]
+    (is (= (get-in updated ["$S" :productions_total]) 4.5))
+    (is (= (get-in updated ["$S" :productions 0 :count]) 4.5))
+    (is (= (get-in updated ["$NP" :parents_total]) 4.5))
+    (is (= (-> (get-in updated ["$NP" :parents]) vals first) 4.5))
+    )
   )
 
 (deftest test-learn-from-parse
   (let [parses (reformat-states-as-parses {good-parse-for-eos1 0.75 good-parse-for-eos2 0.25})
         learned-pcfg1 (apply learn-from-parse
                       compiled-pcfg-for-test
-                      (first parses))
-        learned-pcfg2 (apply learn-from-parse
-                             learned-pcfg1
-                             (-> parses rest first))
-        ]
+                      (first parses))]
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$S" :productions]))) 4.75))
-    (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$NP" :productions]))) 2.05))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$AP" :productions]))) 0.5)) ; should not change
+    (let [learned-pcfg2 (apply learn-from-parse
+                           learned-pcfg1
+                           (-> parses rest first))]
+      (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0))
+      )
   ))
 
 (deftest test-parse-and-learn-sentence
@@ -309,7 +317,8 @@
                        compiled-pcfg-for-test
                        compiled-lexicon-for-test
                        '("cool" "face"))
-        [new-pcfg parses] parse-result]
+        [new-pcfg parses] parse-result
+        prod {}]
     (is (= (get-in new-pcfg ["$N" :parents "$NP"]) 2.0))
     (is (= (count parses) 1))
     )

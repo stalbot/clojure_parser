@@ -18,6 +18,18 @@
    "r" "$R"
    })
 
+(defn productions-key
+  "Find the right index in the list of productions to update
+  base on the current state."
+  ; TODO: revisit this when making :productions into a better structure
+  [productions found-production]
+  (first (keep-indexed
+           (fn [i prod] (if (= (:elements prod)
+                               (:elements found-production))
+                          i))
+           productions))
+  )
+
 (defn normalize-pcfg [pcfg]
   (reduce-kv
     (fn
@@ -233,7 +245,7 @@
   (let [current-node (zp/node current-state)
         num-children (-> current-node :children count)
         production (:production current-node)]
-    (if (= num-children (count production))
+    (if (= num-children (count (:elements production)))
       [[(zp/up current-state) current-prob]]
       (let [new-label (nth (:elements production) num-children)]
         (if (get-in pcfg [new-label :lex-node])
@@ -407,37 +419,42 @@
 ; TODO: optimize when more efficient :parents structure
 (defn find-production [pcfg-entry first-sym]
   (first (filter #(= first-sym (-> %1 :elements first))
-                 (:elements pcfg-entry))))
+                 (:productions pcfg-entry))))
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
   ; TODO: not amazing, this trick relies on the knowledge that
   ; synset nodes have only one parent
   (let [word-entry (get pcfg lem-name)
+        parents (->> word-entry :parents keys (map first))
+        parent-entries (map (fn [t] [t (get pcfg t)]) parents)
         word-parent-info (group-by
                            #(-> %1 last :parents keys first first)
-                           (map (fn [t] [t (get pcfg t)])
-                                (->> word-entry :parents keys (map first))))]
+                           parent-entries)]
     (reduce-kv
       (fn [new-states-and-probs state prob]
         (let [cur-label (-> state zp/node :label)]
           (reduce
             (fn [new-states-and-probs [syn-name synset-entry]]
               (let [merged-features (merge (:features synset-entry)
-                                           (:features word-entry))]
+                                           (:features word-entry))
+                    syn-production (find-production synset-entry lem-name)]
                 (assoc new-states-and-probs
                   (->
                     state
+                    (zp/edit assoc :production (find-production
+                                                 (get pcfg cur-label)
+                                                 syn-name))
                     (append-and-go-to-child
                       (tree-node
                         syn-name
-                        (find-production synset-entry lem-name)
+                        syn-production
                         []
                         merged-features))
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
-                     (/ (get (:parents word-entry) syn-name)
+                     (/ (get (:parents word-entry) [syn-name syn-production])
                        (:parents_total word-entry))
                      (if (features-match (-> state zp/node :features)
                                          merged-features)
@@ -521,25 +538,15 @@
     (priority-map-gt)
     states-and-probs))
 
-(defn productions-key
-  "Find the right index in the list of productions to update
-  base on the current state."
-  ; TODO: revisit this when making :productions into a better structure
-  [productions child-syms]
-  (let [prods child-syms]
-    (first (keep-indexed
-             (fn [i prod] (if (= (:elements prod) prods) i))
-             productions)))
-  )
 
 (defn update-pcfg-count
   [pcfg cur-node prob]
+  (println cur-node)
   (let [key (productions-key
               (get-in
                 pcfg
                 [(:label cur-node) :productions])
-              (map :label (:children cur-node)))
-        ; TODO: rewrite this function with (function) threading
+              (:production cur-node))
         update-fn (fn [f] (+ f prob))
         pcfg
         (update-in
@@ -550,11 +557,11 @@
         (update-in pcfg [(:label cur-node) :productions_total] update-fn)
         production (get-in pcfg [(:label cur-node) :productions key])
         child-sym (first (:elements production))]
-      (-> with-updated-prods
-          (update-in
-            [child-sym :parents (:label cur-node)]
-            update-fn)
-          (update-in [child-sym :parents_total] update-fn))
+    (-> with-updated-prods
+        (update-in
+          [child-sym :parents [(:label cur-node) (:production cur-node)]]
+          update-fn)
+        (update-in [child-sym :parents_total] update-fn))
     )
   )
 
