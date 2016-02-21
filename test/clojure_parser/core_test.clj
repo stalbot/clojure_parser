@@ -85,9 +85,18 @@
   (is (= (:parents (get compiled-pcfg-for-test "$A")) {"$AA" 0.8, "$AP" 0.4}))
   )
 
+(defn tree-node-tst
+  ([label child] (tree-node-tst label child {}))
+  ([label child features]
+   (tree-node label
+              (get-in compiled-pcfg-for-test [label :productions 0])
+              child
+              features))
+  )
+
 (def tnode
   (mk-traversable-tree
-    (tree-node "$AP" [(tree-node "$RP" [(tree-node "$R" nil)])])))
+    (tree-node-tst "$AP" [(tree-node-tst "$RP" [(tree-node-tst "$R" nil)])])))
 
 (deftest test-sequence-is-extension
   (is (= (sequence-is-extension ["$NP"] ["$NP" "$VP"]) true))
@@ -104,7 +113,7 @@
            1.0
            (get-in compiled-pcfg-for-test ["$AP" :productions])
            (get-in compiled-pcfg-for-test ["$AP" :productions_total]))
-         [[(append-and-go-to-child tnode (tree-node "$AA" []))
+         [[(append-and-go-to-child tnode (tree-node-tst "$AA" []))
            0.2]]))
   (let [child (zp/down tnode)]
     (is (= (get-successor-states
@@ -114,7 +123,7 @@
              (get-in compiled-pcfg-for-test ["$RP" :productions])
              (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
            [[(zp/edit tnode #(-> %1)) 1.0] ; edit b/c must have :changed -> true
-            [(append-and-go-to-child child (tree-node "$RP" [])) 0.5]])))
+            [(append-and-go-to-child child (tree-node-tst "$RP" [])) 0.5]])))
   )
 
 (deftest test-get-successor-states-with-features
@@ -171,7 +180,7 @@
 
 (def realistic-tnode
   (mk-traversable-tree
-    (tree-node "$S" [(tree-node "$NP" [(tree-node "$N" [(tree-node "dogs" [])])])])))
+    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs" [])])])])))
 
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
@@ -180,54 +189,54 @@
         learned (infer-possible-states compiled-pcfg-for-test child)]
     (is (= (keys learned)
            [(append-and-go-to-child
-             (append-and-go-to-child realistic-tnode (tree-node "$VP" []))
-             (tree-node "$V" []))
+             (append-and-go-to-child realistic-tnode (tree-node-tst "$VP" []))
+             (tree-node-tst "$V" []))
             (-> realistic-tnode
                 zp/down
-                (append-and-go-to-child (tree-node "$N" [])))]))
+                (append-and-go-to-child (tree-node-tst "$N" [])))]))
     (is (approx= (reduce + (vals learned)) 1.0))
     (is (approx= (first (vals learned)) 0.7222222222222))
   ))
 
 (def first-inferred-state
-  (let [raw (tree-node
+  (let [raw (tree-node-tst
               "$S"
-              [(tree-node
+              [(tree-node-tst
                  "$NP"
-                 [(tree-node
+                 [(tree-node-tst
                     "$N"
-                    [(tree-node
+                    [(tree-node-tst
                        "face.n.01"
-                       [(tree-node "face.n.01.face" nil {"plural" false})]
+                       [(tree-node-tst "face.n.01.face" nil {"plural" false})]
                        {"plural" false})]
                     {"plural" false})]
                  {"plural" false})])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state1
-  (let [raw (tree-node
+  (let [raw (tree-node-tst
               "$S"
-              [(tree-node
+              [(tree-node-tst
                  "$NP"
-                 [(tree-node
+                 [(tree-node-tst
                     "$N"
-                    [(tree-node
+                    [(tree-node-tst
                        "cool.n.01"
-                       [(tree-node "cool.n.01.cool" nil)])])])])]
+                       [(tree-node-tst "cool.n.01.cool" nil)])])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state2
-  (let [raw (tree-node
+  (let [raw (tree-node-tst
               "$S"
-              [(tree-node
+              [(tree-node-tst
                  "$NP"
-                 [(tree-node
+                 [(tree-node-tst
                     "$AP"
-                    [(tree-node
+                    [(tree-node-tst
                        "$A"
-                       [(tree-node
+                       [(tree-node-tst
                           "cool.a.01"
-                          [(tree-node "cool.a.01.cool" nil)])])])])])]
+                          [(tree-node-tst "cool.a.01.cool" nil)])])])])])]
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down zp/down)))
 
 (deftest test-infer-initial-possible-states
@@ -250,11 +259,11 @@
 
 (def pre-state-1
   (zp/edit (-> ambiguous-inferred-state1 zp/remove zp/remove)
-           #(tree-node (:label %1) [])))
+           #(tree-node-tst (:label %1) [])))
 
 (def pre-state-2
   (zp/edit (-> ambiguous-inferred-state2 zp/remove zp/remove)
-           #(tree-node (:label %1) [])))
+           #(tree-node-tst (:label %1) [])))
 
 (deftest test-update-state-probs-for-word
   (let [updated (update-state-probs-for-word
@@ -264,13 +273,13 @@
                   "cool")]
     (is (= (-> updated keys last zp/root)
            (-> pre-state-1
-               (append-and-go-to-child (tree-node "cool.n.01" []))
-               (append-and-go-to-child (tree-node "cool.n.01.cool" nil))
+               (append-and-go-to-child (tree-node-tst "cool.n.01" []))
+               (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))
                zp/root)))
     (is (= (-> updated keys first zp/root)
            (-> pre-state-2
-               (append-and-go-to-child (tree-node "cool.a.01" []))
-               (append-and-go-to-child (tree-node "cool.a.01.cool" nil))
+               (append-and-go-to-child (tree-node-tst "cool.a.01" []))
+               (append-and-go-to-child (tree-node-tst "cool.a.01.cool" nil))
                zp/root)))
     (is (= (vals updated) [0.8 0.2]))
     ))
@@ -281,10 +290,10 @@
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (tree-node "$VP" []))
-      (append-and-go-to-child (tree-node "$V" []))
-      (append-and-go-to-child (tree-node "face.v.01" []))
-      (append-and-go-to-child (tree-node "face.v.01.face" nil))))
+      (append-and-go-to-child (tree-node-tst "$VP" []))
+      (append-and-go-to-child (tree-node-tst "$V" []))
+      (append-and-go-to-child (tree-node-tst "face.v.01" []))
+      (append-and-go-to-child (tree-node-tst "face.v.01.face" nil))))
 
 (def good-parse-for-eos2
   (-> ambiguous-inferred-state1
@@ -292,19 +301,19 @@
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (tree-node "$VP" []))
-      (append-and-go-to-child (tree-node "$V" []))
-      (append-and-go-to-child (tree-node "chase.v.01" []))
-      (append-and-go-to-child (tree-node "chase.v.01.chase" nil))))
+      (append-and-go-to-child (tree-node-tst "$VP" []))
+      (append-and-go-to-child (tree-node-tst "$V" []))
+      (append-and-go-to-child (tree-node-tst "chase.v.01" []))
+      (append-and-go-to-child (tree-node-tst "chase.v.01.chase" nil))))
 
 (def bad-parse-for-eos
   (-> ambiguous-inferred-state2
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (tree-node "$N" []))
-      (append-and-go-to-child (tree-node "cool.n.01" []))
-      (append-and-go-to-child (tree-node "cool.n.01.cool" nil))))
+      (append-and-go-to-child (tree-node-tst "$N" []))
+      (append-and-go-to-child (tree-node-tst "cool.n.01" []))
+      (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))))
 
 (deftest test-update-probs-for-eos
   (let [updated (update-state-probs-for-eos
@@ -325,7 +334,7 @@
 (deftest test-update-pcfg-count
   (let [updated (update-pcfg-count
                   compiled-pcfg-for-test
-                  (tree-node "$NP" [(tree-node "$N" nil)])
+                  (tree-node-tst "$NP" [(tree-node-tst "$N" nil)])
                   0.5)]
     (is (approx= (get-in updated ["$NP" :productions_total]) 1.8))
     (is (approx= (get-in updated ["$NP" :productions 2 :count]) 1.2))
@@ -334,7 +343,7 @@
     )
   (is (= (update-pcfg-count
            compiled-pcfg-for-test
-           (tree-node "$S" [(tree-node "$NP" nil) (tree-node "$VP" nil)])
+           (tree-node-tst "$S" [(tree-node-tst "$NP" nil) (tree-node-tst "$VP" nil)])
            0.5)
          (-> compiled-pcfg-for-test
              (assoc-in ["$S" :productions_total] 4.5)

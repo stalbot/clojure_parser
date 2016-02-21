@@ -74,7 +74,7 @@
                 new-pcfg
                 [(first (:elements production))
                  :parents
-                 node-name]
+                 [node-name production]]
                 (fn [old new] (+ (or old 0.0) new))
                 (:count production)))
             new-pcfg
@@ -196,11 +196,12 @@
     (> (count s2) (count s1))
     (every? true? (map-indexed (fn [idx el] (= (get s2 idx) el)) s1))))
 
-(defrecord TreeNode [label children features])
+(defrecord TreeNode [label production children features])
 
 (defn tree-node
-  ([label children] (TreeNode. label children {}))
-  ([label children features] (TreeNode. label children features)))
+  ([label production children] (TreeNode. label production children {}))
+  ([label production children features]
+   (TreeNode. label production children features)))
 
 (defn mk-traversable-tree [tree]
   "Takes a tree and makes it zippable. Assumes tree is in form of
@@ -208,7 +209,7 @@
   (zp/zipper
     #(-> %1 :children nil? not)
     #(-> %1 :children seq)
-    #(tree-node (:label %1) %2 (:features %1))
+    #(tree-node (:label %1) (:production %1) %2 (:features %1))
     tree))
 
 (defn append-and-go-to-child
@@ -264,6 +265,7 @@
        (let [new-child-sym (nth (:elements production) num-children)]
          (tree-node
            new-child-sym
+           production
            []
            (apply dissoc
                   (if (or (= new-child-sym (:head production))
@@ -367,9 +369,10 @@
   )
 
 (defn make-next-state
-  [pcfg current-state parent-sym]
+  [pcfg current-state parent-sym production]
   (tree-node
     parent-sym
+    production
     [current-state]
     (apply dissoc
            (:features current-state)
@@ -383,7 +386,7 @@
     (priority-map-gt)
     (for
       [[lem-name prob] (get lexical-lkup word)]
-      [(tree-node lem-name nil (get-in pcfg [lem-name :features] {})) prob])))
+      [(tree-node lem-name nil nil (get-in pcfg [lem-name :features] {})) prob])))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -423,7 +426,7 @@
       (let [[current-state current-prob] (peek frontier)
             [frontier found]
             (reduce-kv
-              (fn [[frontier found] parent-sym prob]
+              (fn [[frontier found] [parent-sym prod] prob]
                 (if (>= (count found) (max-states))
                   (reduced [frontier found])
                   (if (or (= parent-sym (start-sym))
@@ -431,12 +434,12 @@
                     [frontier
                      (assoc
                        found
-                       (make-next-state pcfg current-state parent-sym)
+                       (make-next-state pcfg current-state parent-sym prod)
                        (* prob current-prob))
                      ]
                     [(assoc
                        frontier
-                       (make-next-state pcfg current-state parent-sym)
+                       (make-next-state pcfg current-state parent-sym prod)
                        (* prob current-prob))
                      found
                      ])))
@@ -455,13 +458,18 @@
   (every? (fn [[k v]] (= (get features2 k) v)) features1)
   )
 
+; TODO: optimize when more efficient :parents structure
+(defn find-production [pcfg-entry first-sym]
+  (first (filter #(= first-sym (-> %1 :elements first))
+                 (:elements pcfg-entry))))
+
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
   ; TODO: not amazing, this trick relies on the knowledge that
   ; synset nodes have only one parent
   (let [word-entry (get pcfg lem-name)
         word-parent-info (group-by
-                           #(-> %1 last :parents keys first)
+                           #(-> %1 last :parents keys first first)
                            (map (fn [t] [t (get pcfg t)])
                                 (-> word-entry :parents keys)))]
     (reduce-kv
@@ -475,9 +483,13 @@
                   (->
                     state
                     (append-and-go-to-child
-                      (tree-node syn-name [] merged-features))
+                      (tree-node
+                        syn-name
+                        (find-production synset-entry lem-name)
+                        []
+                        merged-features))
                     (append-and-go-to-child
-                      (tree-node lem-name nil (:features word-entry))))
+                      (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
                      (/ (get (:parents word-entry) syn-name)
                        (:parents_total word-entry))
