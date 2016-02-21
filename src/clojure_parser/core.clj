@@ -191,11 +191,6 @@
 (defmacro max-states [] 50)
 (defmacro min-prob-ratio [] 0.001)
 
-(defn sequence-is-extension [s1 s2]
-  (and
-    (> (count s2) (count s1))
-    (every? true? (map-indexed (fn [idx el] (= (get s2 idx) el)) s1))))
-
 (defrecord TreeNode [label production children features])
 
 (defn tree-node
@@ -217,101 +212,54 @@
   (let [with-child (zp/append-child current-state child)]
     (-> with-child zp/down zp/rightmost)))
 
-(defn add-if-prod-match-found
-  [children info index prod]
-  (cond
-    (= children (:elements prod))
-      (assoc info :match index)
-    (sequence-is-extension children (:elements prod))
-      (update info :extends #(conj %1 prod))
-    :default
-      info
-    )
-  )
+(defn get-successor-child-state
+  [production current-state new-label inherited-features prob-modifier]
+  [(append-and-go-to-child
+     current-state
+     (tree-node new-label production [] inherited-features))
+   (* prob-modifier (:count production))])
 
-(defn get-feature-node [pcfg node index]
-  (let [head (->> node :label (get pcfg) :productions #(get %1 index) :head)]
-  (if head
-    (->> node :children (filter #(= (:label %1) head)) )
-    (->> node :children last))))
-
-(defn get-parent-state
-  [pcfg current-state child-index]
-  (let [raw-parent (zp/up current-state)
-        feature-node (get-feature-node pcfg (zp/node raw-parent) child-index)]
-    (if raw-parent
-      (zp/edit
-        raw-parent
-        (fn [new-state]
-          (update
-            new-state
-            :features
-            merge
-            (apply dissoc
-                   (:features feature-node)
-                   (get-in pcfg
-                           [(:label feature-node)
-                            :isolate_features]))))))))
-
-(defn add-next-zip-state
-  [pcfg current-state num-children current-prob
-   total-production-prob next-zipped-states production]
-  (conj
-    next-zipped-states
-    [(append-and-go-to-child
-       current-state
-       ; NOTE: this empty vector rather than nil for children is meaningful ->
-       ; this is a list we intend to fill, rather than a leaf node without children
-       (let [new-child-sym (nth (:elements production) num-children)]
-         (tree-node
-           new-child-sym
-           production
-           []
-           (apply dissoc
-                  (if (or (= new-child-sym (:head production))
-                          (= (-> production :elements count)
-                             (- num-children 1)))
-                    (-> current-state zp/up zp/node :features)
-                    {})
-                  ; TODO: revisit, may want to :isolate feature on current-node, rather than child
-                  (get-in pcfg [new-child-sym :isolate_features])))))
-     (* current-prob (/ (:count production) total-production-prob))]
-    )
+(defn get-inherited-features
+  [current-node index]
+  ; TODO: not actually right yet
+  (:features current-node)
   )
 
 (defn get-successor-states
   "Given a state and probability associated with it, and a set of productions
   of its parent, get all the next states with the probabilities they could
   be associated with."
-  ; TODO : this is the innermost of all loops, will need to be more optimized
-  [pcfg current-state current-prob productions total-production-prob]
+  [pcfg current-state current-prob]
   (let [current-node (zp/node current-state)
-        children (map :label (:children current-node))
-        num-children (count children)
-        match-info
-          (reduce-kv
-            #(add-if-prod-match-found children %1 %2 %3)
-            {:match nil, :extends []}
-            productions)
-        next-zipped-states
-        (reduce
-          #(add-next-zip-state
-            pcfg
-            current-state
-            num-children
-            current-prob
-            total-production-prob
-            %1
-            %2)
-          []
-          (:extends match-info)
-          )
-        ; Only search for the parent node if we have a node whose productions we've filled
-        parent (let [m (:match match-info)]
-                 (and m (get-parent-state pcfg current-state m)))
-        successor-states (if parent [[parent current-prob]] [])]
-    (apply conj successor-states next-zipped-states)
-    ))
+        num-children (-> current-node :children count)
+        production (:production current-node)]
+    (if (= num-children (count production))
+      [[(zp/up current-state) current-prob]]
+      (let [new-label (nth (:elements production) num-children)]
+        (if (get-in pcfg [new-label :lex-node])
+          [[(append-and-go-to-child
+              current-state
+              (tree-node
+                new-label
+                nil
+                []
+                (get-inherited-features current-node num-children)))
+            current-prob]]
+          (let [new-productions (get-in pcfg [new-label :productions])
+                prob-modifier (/ current-prob
+                                 (get-in pcfg [new-label :productions_total]))]
+            (map
+              #(get-successor-child-state
+                %1
+                current-state
+                new-label
+                (get-inherited-features current-node num-children)
+                prob-modifier)
+              new-productions)
+            )
+      )))
+    )
+  )
 
 (defn renormalize-found-states
   [pri-map-trans]
@@ -343,8 +291,7 @@
         found
         (let [[current-state current-prob] (peek frontier)
               current-node (zp/node current-state)
-              remainder (pop frontier)
-              pcfg-entry (get pcfg (:label current-node))]
+              remainder (pop frontier)]
           (if (and (get-in pcfg [(:label current-node) :lex-node])
                    (-> current-node :children empty?))
             (if (and best-prob (< (/ current-prob best-prob) (min-prob-ratio)))
@@ -359,8 +306,7 @@
                   pcfg
                   current-state
                   current-prob
-                  (:productions pcfg-entry)
-                  (:productions_total pcfg-entry)))
+                  ))
               found
               best-prob)))
         )
@@ -471,7 +417,7 @@
         word-parent-info (group-by
                            #(-> %1 last :parents keys first first)
                            (map (fn [t] [t (get pcfg t)])
-                                (-> word-entry :parents keys)))]
+                                (->> word-entry :parents keys (map first))))]
     (reduce-kv
       (fn [new-states-and-probs state prob]
         (let [cur-label (-> state zp/node :label)]

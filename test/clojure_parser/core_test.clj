@@ -60,7 +60,8 @@
          [{:elements ["$NP" "$VP"] :count 4.0}]))
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
-  (is (= (:parents (get compiled-pcfg-for-test "$NP")) {"$S" 4.0}))
+  (is (= (:parents (get compiled-pcfg-for-test "$NP"))
+         {["$S" {:elements ["$NP" "$VP"], :count 4.0}] 4.0}))
   (is (= (map #(-> %1 :elements first)
               (get-in compiled-pcfg-for-test ["$N" :productions]))
          '("person.n.01" "face.n.01" "cool.n.01")))
@@ -78,11 +79,14 @@
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents_total])
          3.0))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents])
-         {"face.n.01" 3.0}))
+         {["face.n.01" {:elements ["face.n.01.face"], :count 3.0}] 3.0}))
   (is (= (get-in compiled-pcfg-for-test ["face" :lex-node]) nil))
   (is (approx= (:parents_total (get compiled-pcfg-for-test "$NP")) 4.0))
   ; TODO: resolve the parent problem
-  (is (= (:parents (get compiled-pcfg-for-test "$A")) {"$AA" 0.8, "$AP" 0.4}))
+  (is (= (:parents (get compiled-pcfg-for-test "$A"))
+         {["$AA" {:elements ["$A"], :count 0.5}] 0.5,
+          ["$AP" {:elements ["$A"], :count 0.4}] 0.4,
+          ["$AA" {:elements ["$A" "$AA"], :count 0.3}] 0.3}))
   )
 
 (defn tree-node-tst
@@ -98,32 +102,17 @@
   (mk-traversable-tree
     (tree-node-tst "$AP" [(tree-node-tst "$RP" [(tree-node-tst "$R" nil)])])))
 
-(deftest test-sequence-is-extension
-  (is (= (sequence-is-extension ["$NP"] ["$NP" "$VP"]) true))
-  (is (= (sequence-is-extension [] ["1"]) true))
-  (is (= (sequence-is-extension ["1" "2"] ["1" "2"]) false))
-  (is (= (sequence-is-extension ["1" "2" "3"] ["1" "2"]) false))
-  (is (= (sequence-is-extension ["1" "3"] ["1" "2"]) false))
-  )
-
 (deftest test-get-successor-states
   (is (= (get-successor-states
            compiled-pcfg-for-test
            tnode
-           1.0
-           (get-in compiled-pcfg-for-test ["$AP" :productions])
-           (get-in compiled-pcfg-for-test ["$AP" :productions_total]))
+           1.0)
          [[(append-and-go-to-child tnode (tree-node-tst "$AA" []))
-           0.2]]))
-  (let [child (zp/down tnode)]
-    (is (= (get-successor-states
-             compiled-pcfg-for-test
-             child
-             1.0
-             (get-in compiled-pcfg-for-test ["$RP" :productions])
-             (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-           [[(zp/edit tnode #(-> %1)) 1.0] ; edit b/c must have :changed -> true
-            [(append-and-go-to-child child (tree-node-tst "$RP" [])) 0.5]])))
+           0.375]
+          [(append-and-go-to-child
+             tnode
+             (tree-node "$AA" (get-in compiled-pcfg-for-test ["$AA" :productions 1]) []))
+           0.625]]))
   )
 
 (deftest test-get-successor-states-with-features
@@ -134,48 +123,9 @@
         successor (get-successor-states
                     compiled-pcfg-for-test
                     with-feature
-                    1.0
-                    (get-in compiled-pcfg-for-test ["$RP" :productions])
-                    (get-in compiled-pcfg-for-test ["$RP" :productions_total]))]
+                    1.0)]
     (is (= (-> successor first first zp/node :features) {"plural" true}))
     (is (= (-> successor (nth 1) first zp/node :features) {"plural" true}))
-    (let [modified-pcfg (assoc-in
-                          compiled-pcfg-for-test
-                          ["$AP" :isolate_features]
-                          #{"plural"})
-          modified-pcfg (assoc-in
-                          modified-pcfg
-                          ["$RP" :isolate_features]
-                          #{"plural"})
-          successor (get-successor-states
-                      modified-pcfg
-                      with-feature
-                      1.0
-                      (get-in compiled-pcfg-for-test ["$RP" :productions])
-                      (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-          has-parent-feature (-> with-feature
-                                 zp/up
-                                 (zp/edit #(assoc %1 :features {"person" "3"}))
-                                 zp/down)
-          successor1 (get-successor-states
-                       modified-pcfg
-                       has-parent-feature
-                       1.0
-                       (get-in compiled-pcfg-for-test ["$RP" :productions])
-                       (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-          successor2 (get-successor-states
-                       compiled-pcfg-for-test
-                       has-parent-feature
-                       1.0
-                       (get-in compiled-pcfg-for-test ["$RP" :productions])
-                       (get-in compiled-pcfg-for-test ["$RP" :productions_total]))
-          ]
-      (is (= (-> successor first first zp/node :features) {}))
-      (is (= (-> successor (nth 1) first zp/node :features) {}))
-      (is (= (-> successor1 first first zp/node :features) {"person" "3"}))
-      (is (= (-> successor2 first first zp/node :features)
-             {"person" "3", "plural" true}))
-      )
   ))
 
 (def realistic-tnode
@@ -185,33 +135,14 @@
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
   ; when it hits min probability, etc.
+  ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
         learned (infer-possible-states compiled-pcfg-for-test child)]
-    (is (= (keys learned)
-           [(append-and-go-to-child
-             (append-and-go-to-child realistic-tnode (tree-node-tst "$VP" []))
-             (tree-node-tst "$V" []))
-            (-> realistic-tnode
-                zp/down
-                (append-and-go-to-child (tree-node-tst "$N" [])))]))
-    (is (approx= (reduce + (vals learned)) 1.0))
-    (is (approx= (first (vals learned)) 0.7222222222222))
+    (is (= (-> learned keys first) (-> realistic-tnode
+                                       zp/down
+                                       (append-and-go-to-child (tree-node "$N" nil [])))))
+    (is (approx= (first (vals learned)) 1.0))
   ))
-
-(def first-inferred-state
-  (let [raw (tree-node-tst
-              "$S"
-              [(tree-node-tst
-                 "$NP"
-                 [(tree-node-tst
-                    "$N"
-                    [(tree-node-tst
-                       "face.n.01"
-                       [(tree-node-tst "face.n.01.face" nil {"plural" false})]
-                       {"plural" false})]
-                    {"plural" false})]
-                 {"plural" false})])]
-    (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down)))
 
 (def ambiguous-inferred-state1
   (let [raw (tree-node-tst
@@ -240,19 +171,24 @@
     (-> raw mk-traversable-tree zp/down zp/down zp/down zp/down zp/down)))
 
 (deftest test-infer-initial-possible-states
-  (is (=
-        (infer-initial-possible-states
-          compiled-pcfg-for-test
-          compiled-lexicon-for-test
-          "face")
-        (priority-map-gt first-inferred-state 1.0)))
   (let [inferred (infer-initial-possible-states
                    compiled-pcfg-for-test
                    compiled-lexicon-for-test
-                   "cool")]
-    (is (=
-          (keys inferred)
-          [ambiguous-inferred-state2 ambiguous-inferred-state1]))
+                   "face")]
+    (is (= (count inferred) 2))
+    (is (= (vals inferred) [0.7 0.3]))
+    (is (= (-> inferred keys first zp/up zp/up zp/up zp/node :production :elements)
+           ["$N"]))
+    (is (= (-> inferred keys (nth 1) zp/up zp/up zp/up zp/node :production :elements)
+           ["$N" "$N"]))
+    )
+  (let [inferred (infer-initial-possible-states
+                   compiled-pcfg-for-test
+                   compiled-lexicon-for-test
+                   "cool")
+        lex-label (map #(-> %1 zp/up zp/up zp/node :label) (keys inferred))]
+    (is (= (count inferred) 3))
+    (is (= lex-label ["$A" "$N" "$N"]))
     (is (approx= (reduce + (vals inferred)) 1.0))
     (is (approx= (first (vals inferred)) 0.571428571428571)))
   )
@@ -271,6 +207,7 @@
                   compiled-lexicon-for-test
                   (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
                   "cool")]
+    (is (> 0 (count updated)))
     (is (= (-> updated keys last zp/root)
            (-> pre-state-1
                (append-and-go-to-child (tree-node-tst "cool.n.01" []))
