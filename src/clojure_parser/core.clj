@@ -232,8 +232,16 @@
 
 (defn get-inherited-features
   [current-node index]
-  ; TODO: not actually right yet
-  (:features current-node)
+  ; TODO: still more here
+  (let [head-index (:head (:production current-node))]
+    (println "head index" head-index)
+    (println (:production current-node))
+    (if (or (= head-index index)
+            (and (nil? head-index)
+                 (= (- (count (:elements (:production current-node))) 1)
+                    index)))
+      (:features current-node)
+      {}))
   )
 
 (defn get-successor-states
@@ -245,8 +253,12 @@
         num-children (-> current-node :children count)
         production (:production current-node)]
     (if (= num-children (count (:elements production)))
-      [[(zp/up current-state) current-prob]]
-      (let [new-label (nth (:elements production) num-children)]
+      (filter first [[(zp/up current-state) current-prob]])
+      (let [new-label (nth (:elements production) num-children)
+            inherited-features (get-inherited-features
+                                 current-node
+                                 num-children)]
+        (println new-label inherited-features)
         (if (get-in pcfg [new-label :lex-node])
           [[(append-and-go-to-child
               current-state
@@ -254,7 +266,7 @@
                 new-label
                 nil
                 []
-                (get-inherited-features current-node num-children)))
+                inherited-features))
             current-prob]]
           (let [new-productions (get-in pcfg [new-label :productions])
                 prob-modifier (/ current-prob
@@ -264,7 +276,7 @@
                 %1
                 current-state
                 new-label
-                (get-inherited-features current-node num-children)
+                inherited-features
                 prob-modifier)
               new-productions)
             )

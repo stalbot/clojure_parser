@@ -18,7 +18,7 @@
                         {:elements ["$A"], :count 0.5}]}
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
                         {:elements ["$R"], :count 0.7}]}
-   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4, :head "$V"}
+   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4, :head 0}
                         {:elements ["$V"], :count 0.6}]}
    })
 
@@ -422,7 +422,7 @@
                         {:elements ["$A"], :count 0.5}]}
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
                         {:elements ["$R"], :count 0.7}]}
-   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4}
+   "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4 :head 0}
                         {:elements ["$V"], :count 0.6}]}
    })
 
