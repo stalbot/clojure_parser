@@ -79,14 +79,13 @@
       (reduce-kv
         (fn
           [new-pcfg node-name node]
-          (reduce
-            (fn
-              [new-pcfg production]
+          (reduce-kv
+            (fn [new-pcfg index production]
               (update-in
                 new-pcfg
                 [(first (:elements production))
                  :parents
-                 [node-name production]]
+                 [node-name index]]
                 (fn [old new] (+ (or old 0.0) new))
                 (:count production)))
             new-pcfg
@@ -369,8 +368,9 @@
   (let [pcfg-entry (get pcfg label)
         total (:parents_total pcfg-entry)]
     (into (priority-map-gt) (for
-                              [[k v] (:parents pcfg-entry)]
-                              [k (/ v total)]))
+                              [[[label index] v] (:parents pcfg-entry)]
+                              [[label (get-in pcfg [label :productions index])]
+                               (/ v total)]))
     ))
 
 (defn infer-initial-possible-states
@@ -454,7 +454,11 @@
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
-                     (/ (get (:parents word-entry) [syn-name syn-production])
+                     ; TODO: gross! temporary! don't relookup key!
+                     (/ (get (:parents word-entry) [syn-name
+                                                    (productions-key
+                                                      (:productions synset-entry)
+                                                      syn-production)])
                        (:parents_total word-entry))
                      (if (features-match (-> state zp/node :features)
                                          merged-features)
@@ -485,29 +489,16 @@
        renormalize-found-states)
   )
 
-(defn update-prob-for-null-word
-  [pcfg state prob]
-  (loop [state (zp/up state) prob prob]
-    (let [node (zp/node state)]
-        (let [pcfg-node (get pcfg (:label node))
-              productions (:productions pcfg-node)
-              child-syms (map :label (:children node))
-              matching-production (first (filter
-                                           #(= (:elements %1) child-syms)
-                                           productions))]
-          (cond
-            (and (nil? (:children node)) (empty? child-syms))
-              (recur (zp/up state) prob)
-            (nil? matching-production)
-              0.0
-            (= (:label node) (start-sym))
-              prob
-            :else
-              (recur
-                (zp/up state)
-                (/ (* prob (:count matching-production))
-                   (:productions_total pcfg-node))))))
-  ))
+(defn tree-is-filled
+  [state]
+  (let [node (zp/node state)]
+    (if (> (count(:elements (:production node)))
+           (count (:children node)))
+      false
+      (if (= (:label node) (start-sym))
+        true
+        (tree-is-filled (zp/up state))
+        ))))
 
 (defn update-state-probs-for-eos
   "When we reach the end of a sentence, we need to traverse all of our
@@ -517,17 +508,13 @@
   for some states)."
   [pcfg states-and-probs]
   (renormalize-found-states
-    (reduce-kv
-      (fn [states-and-probs state prob]
-        (let [new-prob (update-prob-for-null-word pcfg state prob)]
-          (if (= 0.0 new-prob)
-            (dissoc states-and-probs state) ; TODO: best to just remove, or keep with 0 prob?
-            (assoc
-              states-and-probs
-              state
-              new-prob))))
+    (reduce
+      (fn [states-and-probs state]
+        (if (tree-is-filled state)
+          states-and-probs
+          (dissoc states-and-probs state)))
       states-and-probs
-      states-and-probs
+      (keys states-and-probs)
       )))
 
 (defn reformat-states-as-parses
@@ -541,7 +528,6 @@
 
 (defn update-pcfg-count
   [pcfg cur-node prob]
-  (println cur-node)
   (let [key (productions-key
               (get-in
                 pcfg
@@ -559,7 +545,7 @@
         child-sym (first (:elements production))]
     (-> with-updated-prods
         (update-in
-          [child-sym :parents [(:label cur-node) (:production cur-node)]]
+          [child-sym :parents [(:label cur-node) key]]
           update-fn)
         (update-in [child-sym :parents_total] update-fn))
     )

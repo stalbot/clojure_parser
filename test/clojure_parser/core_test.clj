@@ -63,7 +63,7 @@
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
-         {["$S" {:elements ["$NP" "$VP"], :count 4.0}] 4.0}))
+         {["$S" 0] 4.0}))
   (is (= (map #(-> %1 :elements first)
               (get-in compiled-pcfg-for-test ["$N" :productions]))
          '("person.n.01" "face.n.01" "cool.n.01")))
@@ -81,14 +81,14 @@
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents_total])
          3.0))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents])
-         {["face.n.01" {:elements ["face.n.01.face"], :count 3.0}] 3.0}))
+         {["face.n.01" 0] 3.0}))
   (is (= (get-in compiled-pcfg-for-test ["face" :lex-node]) nil))
   (is (approx= (:parents_total (get compiled-pcfg-for-test "$NP")) 4.0))
   ; TODO: resolve the parent problem
   (is (= (:parents (get compiled-pcfg-for-test "$A"))
-         {["$AA" {:elements ["$A"], :count 0.5}] 0.5,
-          ["$AP" {:elements ["$A"], :count 0.4}] 0.4,
-          ["$AA" {:elements ["$A" "$AA"], :count 0.3}] 0.3}))
+         {["$AA" 1] 0.5,
+          ["$AP" 1] 0.4,
+          ["$AA" 0] 0.3}))
   )
 
 (defn tree-node-tst
@@ -231,7 +231,7 @@
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (tree-node-tst "$VP" []))
+      (append-and-go-to-child (tree-node-tst "$VP" {:elements ["$V"]} []))
       (append-and-go-to-child (tree-node-tst "$V" []))
       (append-and-go-to-child (tree-node-tst "face.v.01" []))
       (append-and-go-to-child (tree-node-tst "face.v.01.face" nil))))
@@ -242,7 +242,7 @@
       zp/up
       zp/up
       zp/up
-      (append-and-go-to-child (tree-node-tst "$VP" []))
+      (append-and-go-to-child (tree-node-tst "$VP" {:elements ["$V"]} []))
       (append-and-go-to-child (tree-node-tst "$V" []))
       (append-and-go-to-child (tree-node-tst "chase.v.01" []))
       (append-and-go-to-child (tree-node-tst "chase.v.01.chase" nil))))
@@ -263,8 +263,8 @@
                    good-parse-for-eos2 0.3
                    bad-parse-for-eos 0.25})]
     (is (= (keys updated) [good-parse-for-eos1 good-parse-for-eos2]))
-    (is (approx= (-> updated vals first) 0.75))
-    (is (approx= (-> updated vals rest first) 0.25))
+    (is (approx= (-> updated vals first) 0.6))
+    (is (approx= (->> updated vals (reduce +)) 1.0))
   ))
 
 (deftest test-reformat-states-as-parses
@@ -273,17 +273,16 @@
          {(zp/root bad-parse-for-eos) 1.0})))
 
 (deftest test-update-pcfg-count
-  (let [prod (get-in compiled-pcfg-for-test ["$NP" :productions 2])
-        updated (update-pcfg-count
+  (let [updated (update-pcfg-count
                   compiled-pcfg-for-test
                   (tree-node
                     "$NP"
-                    prod
+                    (get-in compiled-pcfg-for-test ["$NP" :productions 2])
                     [(tree-node "$N" nil nil)])
                   0.5)]
     (is (approx= (get-in updated ["$NP" :productions_total]) 1.8))
     (is (approx= (get-in updated ["$NP" :productions 2 :count]) 1.2))
-    (is (approx= (get-in updated ["$N" :parents ["$NP" prod]]) 1.2))
+    (is (approx= (get-in updated ["$N" :parents ["$NP" 2]]) 1.2))
     (is (approx= (get-in updated ["$N" :parents_total]) 1.5))
     )
   (let [updated (update-pcfg-count
@@ -317,10 +316,10 @@
                        compiled-pcfg-for-test
                        compiled-lexicon-for-test
                        '("cool" "face"))
-        [new-pcfg parses] parse-result
-        prod {}]
-    (is (= (get-in new-pcfg ["$N" :parents "$NP"]) 2.0))
+        [new-pcfg parses] parse-result]
+    (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 2]]) 1.7))
     (is (= (count parses) 1))
+    (is (approx= (reduce + (vals parses)) 1.0))
     )
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-for-test
@@ -328,9 +327,11 @@
                        '("cool" "cool" "face"))
         [new-pcfg parses] parse-result]
     ; the ["$AP" "$N"] production does not contribute to the $N parents
-    (is (approx= (get-in new-pcfg ["$N" :parents "$NP"]) 1.1724137931034484))
+    (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 1]]) 0.4836734693877551))
+    (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 2]]) 0.7))
     (is (= (reduce + (map :count (get-in new-pcfg ["$S" :productions]))) 5.0))
     (is (= (count parses) 2))
+    (is (approx= (reduce + (vals parses)) 1.0))
     )
   )
 
