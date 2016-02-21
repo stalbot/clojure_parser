@@ -333,7 +333,7 @@
     [current-state]
     (apply dissoc
            (:features current-state)
-           (get-in pcfg [parent-sym :isolate_features]))))
+           (get-in pcfg [(:label current-state) :isolate_features]))))
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)

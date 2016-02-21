@@ -388,14 +388,14 @@
            {"plural" true}) )
     (is (= (-> parses first first :features) {"plural" true}))
     (is (= (-> parses first first :children first :features) {"plural" true}))
-    (is (> (get-in new-pcfg ["face.n.01.faces" :parents "face.n.01"])
+    (is (> (get-in new-pcfg ["face.n.01.faces" :parents ["face.n.01" 1]])
            (get-in
              compiled-pcfg-with-better-features
-             ["face.n.01.faces" :parents "face.n.01"])))
-    (is (= (get-in new-pcfg ["face.n.01.face" :parents "face.n.01"])
+             ["face.n.01.faces" :parents ["face.n.01" 1]])))
+    (is (= (get-in new-pcfg ["face.n.01.face" :parents ["face.n.01" 1]])
            (get-in
              compiled-pcfg-with-better-features
-             ["face.n.01.face" :parents "face.n.01"])))
+             ["face.n.01.face" :parents ["face.n.01" 1]])))
     )
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-with-better-features
