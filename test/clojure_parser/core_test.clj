@@ -455,7 +455,7 @@
    "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
                          :count 0.4,
                          :head 0}
-                        {:elements ["$V"], :count 0.6}]}
+                        {:elements [["$V" {"trans" false}]], :count 0.6}]}
    })
 
 (def lexicon-for-testing-features-in-prods
@@ -465,7 +465,9 @@
                                   {:name "faces", :count 1, :features {"plural" true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
    "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
-   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1}]}
+   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
+   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
 
 (def compiled-lex-for-features-in-prods
@@ -479,7 +481,7 @@
 (deftest pcfg-with-prods-proper-format
   (is (= {"trans" true}
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 0 :features])))
-  (is (= {}
+  (is (= {"trans" false}
          (get-in compiled-prod-pcfg ["$VP" :productions 1 :elements 0 :features])))
   (is (= {}
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features])))
@@ -499,6 +501,23 @@
   (let [[_ parses] (parse-and-learn-sentence
                      compiled-prod-pcfg
                      compiled-lex-for-features-in-prods
-                     '("person" "walk" "face"))]
+                     '("person" "talk" "face"))]
     (is (= 0 (count parses)))
+    ))
+
+(deftest test-feature-causes-correct-synset-choice
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("person" "walk" "face"))]
+    (is (= 1 (count parses)))
+    (is (= "walk.v.02"
+           (-> parses first first :children last :children first :children first :label))))
+    (let [[_ parses] (parse-and-learn-sentence
+                       compiled-prod-pcfg
+                       compiled-lex-for-features-in-prods
+                       '("person" "walk"))]
+      (is (= 1 (count parses)))
+      (is (= "walk.v.01"
+             (-> parses first first :children last :children first :children first :label)))
     ))
