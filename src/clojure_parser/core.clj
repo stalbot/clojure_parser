@@ -66,6 +66,7 @@
                            (:productions entry)))
           :parents (priority-map-gt)
           :isolate_features (into #{} (:isolate_features entry))
+          :sem (or (:sem entry) #(-> %1))
           )))
     pcfg
     pcfg
@@ -202,12 +203,14 @@
 (defmacro max-states [] 50)
 (defmacro min-prob-ratio [] 0.001)
 
-(defrecord TreeNode [label production children features])
+(defrecord TreeNode [label production children features sem])
 
 (defn tree-node
-  ([label production children] (TreeNode. label production children {}))
+  ([label production children] (tree-node label production children {} nil))
   ([label production children features]
-   (TreeNode. label production children features)))
+   (tree-node label production children features nil))
+  ([label production children features semantics]
+   (TreeNode. label production children features semantics)))
 
 (defn mk-traversable-tree [tree]
   "Takes a tree and makes it zippable. Assumes tree is in form of
@@ -217,6 +220,14 @@
     #(-> %1 :children seq)
     #(tree-node (:label %1) (:production %1) %2 (:features %1))
     tree))
+
+; for production "$NP": {:elements ["$AP" "$NN], :sem ["%1" "%2"]}
+; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
+; for production "$VP": {:elements ["$V" "$NP"], :sem ["%1" "@1" "%2"]}
+; for production "$NN": {:elements ["$N"], :sem "%1"} ; (default)
+; for tree-node: {:sem }
+(defn sem-for-child [cur-node adding-production adding-pcfg-entry]
+  )
 
 (defn append-and-go-to-child
   [current-state child]
@@ -231,18 +242,19 @@
    (* prob-modifier (:count production))])
 
 (defn get-inherited-features
-  [current-node index]
-  ; TODO: still more here
-  (let [head-index (:head (:production current-node))]
-    (println "head index" head-index)
-    (println (:production current-node))
-    (if (or (= head-index index)
-            (and (nil? head-index)
-                 (= (- (count (:elements (:production current-node))) 1)
-                    index)))
-      (:features current-node)
-      {}))
+  [current-node is-head]
+  ; TODO: much more here later
+  (if is-head
+    (:features current-node)
+    {})
   )
+
+(defn get-is-head [current-node index]
+  (let [head-index (:head (:production current-node))]
+    (or (= head-index index)
+      (and (nil? head-index)
+           (= (- (count (:elements (:production current-node))) 1)
+              index)))))
 
 (defn get-successor-states
   "Given a state and probability associated with it, and a set of productions
@@ -255,10 +267,10 @@
     (if (= num-children (count (:elements production)))
       (filter first [[(zp/up current-state) current-prob]])
       (let [new-label (nth (:elements production) num-children)
+            is-head (get-is-head current-node num-children)
             inherited-features (get-inherited-features
                                  current-node
-                                 num-children)]
-        (println new-label inherited-features)
+                                 is-head)]
         (if (get-in pcfg [new-label :lex-node])
           [[(append-and-go-to-child
               current-state
@@ -601,7 +613,9 @@
   )
 
 (defn parse-and-learn-sentence
-  [pcfg lexical-lkup sentence]
+  ([pcfg lexical-lkup sentence]
+   (parse-and-learn-sentence pcfg lexical-lkup sentence true))
+  ([pcfg lexical-lkup sentence learn]
   (let [starting-states
         (infer-initial-possible-states pcfg lexical-lkup (first sentence))]
     (loop [sentence (rest sentence)
@@ -610,7 +624,7 @@
         (let [parses
               (reformat-states-as-parses
                 (update-state-probs-for-eos pcfg current-states))
-              pcfg (learn-from-parses pcfg parses)]
+              pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
           [pcfg parses]
           )
         (recur
@@ -623,5 +637,5 @@
               next-possible-states
               (first sentence))))))
     )
-  )
+  ))
 

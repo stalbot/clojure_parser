@@ -432,12 +432,16 @@
                             lexicon-for-test-with-better-features)))
 
 (deftest test-some-larger-parses
-  (is (< 0 (count (last (parse-and-learn-sentence
+  (is (not-empty (last (parse-and-learn-sentence
                           compiled-more-realistic-pcfg
                           compiled-lex-with-better-features
-                          '("newly" "new" "cool" "faces" "chase" "faces"))))))
-  (is (< 0 (count (last (parse-and-learn-sentence
+                          '("newly" "new" "cool" "faces" "chase" "faces")))))
+  (is (not-empty (last (parse-and-learn-sentence
                           compiled-more-realistic-pcfg
                           compiled-lex-with-better-features
-                          '("faces" "chase" "newly" "cool" "person"))))))
+                          '("faces" "chase" "newly" "cool" "person")))))
+  (is (empty? (last (parse-and-learn-sentence
+                          compiled-more-realistic-pcfg
+                          compiled-lex-with-better-features
+                          '("face" "chase" "newly" "cool" "person")))))
   )
