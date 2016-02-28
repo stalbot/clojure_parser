@@ -52,6 +52,19 @@
     )
   )
 
+(defrecord ProductionElement [label features])
+
+(defn prod-el [element]
+  (if (coll? element)
+    (let [[label features] element] (ProductionElement. label features))
+    (ProductionElement. element {})))
+
+(defn reformat-production [production]
+  (assoc production
+    :count (double (:count production))
+    :elements (into [] (map prod-el (:elements production))))
+  )
+
 (defn reformat-pcfg-nodes [pcfg]
   (reduce-kv
     (fn [pcfg sym entry]
@@ -62,7 +75,7 @@
           ; TODO consider making productions not just a vector here
           :productions (into []
                          (map
-                           #(assoc %1 :count (double (:count %1)))
+                           reformat-production
                            (:productions entry)))
           :parents (priority-map-gt)
           :isolate_features (into #{} (:isolate_features entry))
@@ -84,7 +97,7 @@
             (fn [new-pcfg index production]
               (update-in
                 new-pcfg
-                [(first (:elements production))
+                [(-> production :elements first :label)
                  :parents
                  [node-name index]]
                 (fn [old new] (+ (or old 0.0) new))
@@ -163,7 +176,9 @@
         (assoc-in
           [syn-name :productions]
           (map (fn [lemma-entry]
-                 {:elements [(make-lem-pcfg-name syn-name (:name lemma-entry))]
+                 {:elements [(make-lem-pcfg-name
+                                        syn-name
+                                        (:name lemma-entry))]
                   :count (:count lemma-entry)})
                (get-in lexicon [syn-name :lemmas])))
         (add-leaves-as-nodes lexicon syn-name)
@@ -241,12 +256,11 @@
      (tree-node new-label production [] inherited-features))
    (* prob-modifier (:count production))])
 
-(defn get-inherited-features
-  [current-node is-head]
+(defn get-next-features
+  [current-node new-entry is-head]
   ; TODO: much more here later
-  (if is-head
-    (:features current-node)
-    {})
+  (let [inherited (if is-head (:features current-node) {})]
+    (merge inherited (:features new-entry)))
   )
 
 (defn get-is-head [current-node index]
@@ -266,11 +280,13 @@
         production (:production current-node)]
     (if (= num-children (count (:elements production)))
       (filter first [[(zp/up current-state) current-prob]])
-      (let [new-label (nth (:elements production) num-children)
+      (let [new-entry (nth (:elements production) num-children)
+            new-label (:label new-entry)
             is-head (get-is-head current-node num-children)
-            inherited-features (get-inherited-features
-                                 current-node
-                                 is-head)]
+            next-features (get-next-features
+                            current-node
+                            new-entry
+                            is-head)]
         (if (get-in pcfg [new-label :lex-node])
           [[(append-and-go-to-child
               current-state
@@ -278,7 +294,7 @@
                 new-label
                 nil
                 []
-                inherited-features))
+                next-features))
             current-prob]]
           (let [new-productions (get-in pcfg [new-label :productions])
                 prob-modifier (/ current-prob
@@ -288,7 +304,7 @@
                 %1
                 current-state
                 new-label
-                inherited-features
+                next-features
                 prob-modifier)
               new-productions)
             )
@@ -442,7 +458,7 @@
 
 ; TODO: optimize when more efficient :parents structure
 (defn find-production [pcfg-entry first-sym]
-  (first (filter #(= first-sym (-> %1 :elements first))
+  (first (filter #(= first-sym (-> %1 :elements first :label))
                  (:productions pcfg-entry))))
 
 (defn update-state-probs-for-lemma
@@ -516,7 +532,7 @@
 (defn tree-is-filled
   [state]
   (let [node (zp/node state)]
-    (if (> (count(:elements (:production node)))
+    (if (> (count (:elements (:production node)))
            (count (:children node)))
       false
       (if (= (:label node) (start-sym))
@@ -566,7 +582,7 @@
         with-updated-prods
         (update-in pcfg [(:label cur-node) :productions_total] update-fn)
         production (get-in pcfg [(:label cur-node) :productions key])
-        child-sym (first (:elements production))]
+        child-sym (-> production :elements first :label)]
     (-> with-updated-prods
         (update-in
           [child-sym :parents [(:label cur-node) key]]

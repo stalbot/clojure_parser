@@ -59,16 +59,16 @@
   (is (approx= 0.5 (get-in compiled-pcfg-for-test ["$AP" :productions_total])))
   (is (= (:parents (get compiled-pcfg-for-test "$S")) {}))
   (is (= (:productions (get compiled-pcfg-for-test "$S"))
-         [{:elements ["$NP" "$VP"] :count 4.0}]))
+         [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0}]))
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
          {["$S" 0] 4.0}))
   (is (= (map #(-> %1 :elements first)
               (get-in compiled-pcfg-for-test ["$N" :productions]))
-         '("person.n.01" "face.n.01" "cool.n.01")))
+         (map prod-el '("person.n.01" "face.n.01" "cool.n.01"))))
   (is (= (->> (get-in compiled-pcfg-for-test ["$N" :productions])
-              (filter #(= "person.n.01" (first (:elements %1))))
+              (filter #(= "person.n.01" (:label (first (:elements %1)))))
               first
               :count)
          7.0))
@@ -179,9 +179,9 @@
                    "face")]
     (is (= (count inferred) 2))
     (is (= (vals inferred) [0.7 0.3]))
-    (is (= (-> inferred keys first zp/up zp/up zp/up zp/node :production :elements)
+    (is (= (->> inferred keys first zp/up zp/up zp/up zp/node :production :elements (map :label))
            ["$N"]))
-    (is (= (-> inferred keys (nth 1) zp/up zp/up zp/up zp/node :production :elements)
+    (is (= (map :label (-> inferred keys (nth 1) zp/up zp/up zp/up zp/node :production :elements))
            ["$N" "$N"]))
     )
   (let [inferred (infer-initial-possible-states
@@ -212,13 +212,13 @@
     (is (< 0 (count updated)))
     (is (= (-> updated keys last zp/root)
            (-> pre-state-1
-               (zp/edit assoc :production {:elements ["cool.n.01"], :count 1.0})
+               (zp/edit assoc :production {:elements [(prod-el "cool.n.01")], :count 1.0})
                (append-and-go-to-child (tree-node-tst "cool.n.01" []))
                (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))
                zp/root)))
     (is (= (-> updated keys first zp/root)
            (-> pre-state-2
-               (zp/edit assoc :production {:elements ["cool.a.01"], :count 4.0})
+               (zp/edit assoc :production {:elements [(prod-el "cool.a.01")], :count 4.0})
                (append-and-go-to-child (tree-node-tst "cool.a.01" []))
                (append-and-go-to-child (tree-node-tst "cool.a.01.cool" nil))
                zp/root)))
@@ -445,3 +445,60 @@
                           compiled-lex-with-better-features
                           '("face" "chase" "newly" "cool" "person")))))
   )
+
+(def pcfg-with-features-in-prods
+  {
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+         :isolate_features ["plural" "person"]}
+   "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3}
+                        {:elements ["$N"], :count 0.7}]}
+   "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
+                         :count 0.4,
+                         :head 0}
+                        {:elements ["$V"], :count 0.6}]}
+   })
+
+(def lexicon-for-testing-features-in-prods
+  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
+                                    {:name "individual", :count 2}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
+                                  {:name "faces", :count 1, :features {"plural" true}}]}
+   "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
+   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
+   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1}]}
+   "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
+
+(def compiled-lex-for-features-in-prods
+  (make-lexical-lkup lexicon-for-testing-features-in-prods))
+
+(def compiled-prod-pcfg
+  (build-operational-pcfg (lexicalize-pcfg
+                            pcfg-with-features-in-prods
+                            lexicon-for-testing-features-in-prods)))
+
+(deftest pcfg-with-prods-proper-format
+  (is (= {"trans" true}
+         (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 0 :features])))
+  (is (= {}
+         (get-in compiled-prod-pcfg ["$VP" :productions 1 :elements 0 :features])))
+  (is (= {}
+         (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features])))
+  )
+
+(deftest test-parse-of-features-is-correct
+  (let [[_ parses] (parse-and-learn-sentence
+                    compiled-prod-pcfg
+                    compiled-lex-for-features-in-prods
+                    '("person" "chase" "face"))]
+    (is (= 1 (count parses)))
+    (is (= {"trans" true}
+           (-> parses first first :children last :children first :children first :features)))
+    ))
+
+(deftest test-no-parse-when-blocked-by-features
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("person" "walk" "face"))]
+    (is (= 0 (count parses)))
+    ))
