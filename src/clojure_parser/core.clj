@@ -518,7 +518,7 @@
   [pcfg lexical-lkup states-and-probs word]
   (->> word
        (get lexical-lkup)
-       (map
+       (pmap
          (fn [[lem-name prob]]
             (update-state-probs-for-lemma
               pcfg
