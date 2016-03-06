@@ -278,7 +278,9 @@
                   {good-parse-for-eos1 0.45
                    good-parse-for-eos2 0.3
                    bad-parse-for-eos 0.25})]
-    (is (= (keys updated) [good-parse-for-eos1 good-parse-for-eos2]))
+    (is (= (map #(-> %1 zp/root (extract-stuff [:label :features]))  (keys updated))
+           (map #(-> %1 zp/root (extract-stuff [:label :features]))
+                [good-parse-for-eos1 good-parse-for-eos2])))
     (is (approx= (-> updated vals first) 0.6))
     (is (approx= (->> updated vals (reduce +)) 1.0))
   ))
@@ -541,6 +543,9 @@
 (def parent-tree-node-for-sem-simple
   (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["hi" :v1]}}] {} {}))
 
+(def parent-tree-node-for-sem-super-simple
+  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val "chase.v.01"}}] {} {}))
+
 (def parent-tree-node-with-lambda
   (tree-node "$VP"
     {:sem ["%1" "%2"]}
@@ -556,6 +561,8 @@
 (deftest test-sem-for-parent
   (is (= (sem-for-parent parent-tree-node-for-sem-simple)
          {:val ["hi" :v1]}))
+  (is (= (sem-for-parent parent-tree-node-for-sem-super-simple)
+         {:val "chase.v.01"}))
   (is (= (sem-for-parent parent-tree-node-with-lambda)
          {:val ["hi" :v1 ["cat" :c1]]}))
   (is (= (sem-for-parent parent-tree-node-with-and)
@@ -597,10 +604,23 @@
                             pcfg-with-features-and-sems-in-prods
                             lexicon-for-testing-features-and-sems-in-prods)))
 
+(defn extract-first-sem-from-parse [parse]
+  (-> parse last first first :sem))
+
 (deftest test-parse-with-sems
-  ; TODO!
-  (parse-and-learn-sentence
-    compiled-pcfg-test-sems-features
-    compiled-lex-test-sems-features
-    '("person" "chase" "face")))
+  (is (=
+        {:val '("chase.v.01" "person.n.01" "face.n.01")}
+        (extract-first-sem-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("person" "chase" "face")))))
+  (is (=
+        {:val '("chase.v.01" "person.n.01" (:and "person.n.01" "face.n.01"))}
+        (extract-first-sem-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("person" "chase" "person" "face")))))
+  )
 

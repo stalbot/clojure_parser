@@ -577,6 +577,18 @@
         (tree-is-filled (zp/up state))
         ))))
 
+(defn add-sems-at-eos
+  ([pcfg state] (add-sems-at-eos pcfg state false))
+  ([pcfg state add-sem]
+   (let [node (zp/node state)
+         add-sem (or add-sem (:lex-node (get pcfg (:label node))))
+         state (if add-sem
+                 (zp/edit state assoc :sem (sem-for-parent node))
+                 state)
+         parent (zp/up state)]
+     (if parent (add-sems-at-eos pcfg parent add-sem) state)
+     )))
+
 (defn update-state-probs-for-eos
   "When we reach the end of a sentence, we need to traverse all of our
   states and find the most likely final states, given that there are no
@@ -585,13 +597,13 @@
   for some states)."
   [pcfg states-and-probs]
   (renormalize-found-states
-    (reduce
-      (fn [states-and-probs state]
+    (reduce-kv
+      (fn [new-states-and-probs state prob]
         (if (tree-is-filled state)
-          states-and-probs
-          (dissoc states-and-probs state)))
+          (assoc new-states-and-probs (add-sems-at-eos pcfg state) prob)
+          new-states-and-probs))
+      (priority-map-gt)
       states-and-probs
-      (keys states-and-probs)
       )))
 
 (defn reformat-states-as-parses
