@@ -79,7 +79,7 @@
                            (:productions entry)))
           :parents (priority-map-gt)
           :isolate_features (into #{} (:isolate_features entry))
-          :sem (or (:sem entry) #(-> %1))
+          :sem (or (:sem entry) ["%1"])
           )))
     pcfg
     pcfg
@@ -236,13 +236,43 @@
     #(tree-node (:label %1) (:production %1) %2 (:features %1))
     tree))
 
-; for production "$NP": {:elements ["$AP" "$NN], :sem ["%1" "%2"]}
+; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
 ; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
 ; for production "$VP": {:elements ["$V" "$NP"], :sem ["%1" "@1" "%2"]}
 ; for production "$NN": {:elements ["$N"], :sem "%1"} ; (default)
-; for tree-node: {:sem }
-(defn sem-for-child [cur-node adding-production adding-pcfg-entry]
-  )
+; for node: {:sem {:attributes [], :val nil, :args []}} ; (val set on up-pass)
+(defn sem-do-subbing [sub-prefix from-vec]
+  (fn [sym]
+    (if (and (string? sym) (= (first sym) sub-prefix))
+      ; TODO: this junk should happen at pcfg compile time
+      (get from-vec (- (read-string (subs sym 1)) 1))
+      sym)))
+
+(defn sub-child-sems [sem-structure child-sems]
+  (map
+    (sem-do-subbing \% child-sems)
+    sem-structure))
+
+(defn lambda-reduce-sem [subbed]
+  (let [possible-lambda (first subbed)]
+    (if (not (and (coll? possible-lambda)
+                  (some
+                    #(and (string? %1) (-> %1 first (= \@)))
+                    possible-lambda)))
+      (if (-> subbed count (= 1)) (first subbed) subbed)
+      (let [args (into [] (rest subbed))]
+        (map
+          (sem-do-subbing \@ args)
+          possible-lambda)))
+  ))
+
+(defn sem-for-parent [parent-node]
+  (let [cur-sem (:sem parent-node)
+        child-sems (into [] (map #(-> %1 :sem :val) (:children parent-node)))
+        sem-structure (-> parent-node :production :sem)
+        subbed (sub-child-sems sem-structure child-sems)
+        reduced-sem (lambda-reduce-sem subbed)]
+    (assoc cur-sem :val reduced-sem)))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -258,7 +288,7 @@
 
 (defn get-next-features
   [current-node new-entry is-head]
-  ; TODO: much more here later
+  ; TODO: perhaps more here later
   (let [inherited (if is-head (:features current-node) {})]
     (merge inherited (:features new-entry)))
   )
@@ -270,16 +300,17 @@
            (= (- (count (:elements (:production current-node))) 1)
               index)))))
 
+(defn get-parent-state [current-state]
+  (let [parent (zp/up current-state)]
+    (and parent (zp/edit parent assoc :sem (sem-for-parent parent)))))
+
 (defn get-successor-states
-  "Given a state and probability associated with it, and a set of productions
-  of its parent, get all the next states with the probabilities they could
-  be associated with."
   [pcfg current-state current-prob]
   (let [current-node (zp/node current-state)
         num-children (-> current-node :children count)
         production (:production current-node)]
     (if (= num-children (count (:elements production)))
-      (filter first [[(zp/up current-state) current-prob]])
+      (filter first [[(get-parent-state current-state) current-prob]])
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
             is-head (get-is-head current-node num-children)

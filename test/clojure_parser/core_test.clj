@@ -521,3 +521,70 @@
       (is (= "walk.v.01"
              (-> parses first first :children last :children first :children first :label)))
     ))
+
+(def parent-tree-node-for-sem-simple
+  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["hi" :v1]}}] {} {}))
+
+(def parent-tree-node-with-lambda
+  (tree-node "$VP"
+    {:sem ["%1" "%2"]}
+    [{:sem {:val ["hi" :v1 "@1"]}} {:sem {:val ["cat" :c1]}}]
+    {} {}))
+
+(def parent-tree-node-with-and
+  (tree-node "$VP"
+             {:sem [:and "%1" "%2"]}
+             [{:sem {:val ["hi" :v1]}} {:sem {:val ["cat" :c1]}}]
+             {} {}))
+
+(deftest test-sem-for-parent
+  (is (= (sem-for-parent parent-tree-node-for-sem-simple)
+         {:val ["hi" :v1]}))
+  (is (= (sem-for-parent parent-tree-node-with-lambda)
+         {:val ["hi" :v1 ["cat" :c1]]}))
+  (is (= (sem-for-parent parent-tree-node-with-and)
+         {:val [:and ["hi" :v1] ["cat" :c1]]}))
+  )
+
+(def pcfg-with-features-and-sems-in-prods
+  {
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :sem ["%2" "%1"]}]
+         :isolate_features ["plural" "person"]}
+   "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3, :sem [:and "%1" "%2"]}
+                        {:elements ["$N"], :count 0.7}]}
+   "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
+                         :count 0.4,
+                         :sem ["%1" "@1" "%2"],
+                         :head 0}
+                        {:elements [["$V" {"trans" false}]],
+                         :sem ["%1" "@1"]
+                         :count 0.6}]}
+   })
+
+(def lexicon-for-testing-features-and-sems-in-prods
+  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
+                                    {:name "individual", :count 2}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
+                                  {:name "faces", :count 1, :features {"plural" true}}]}
+   "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
+   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
+   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
+   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
+   "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
+
+(def compiled-lex-test-sems-features
+  (make-lexical-lkup lexicon-for-testing-features-and-sems-in-prods))
+
+(def compiled-pcfg-test-sems-features
+  (build-operational-pcfg (lexicalize-pcfg
+                            pcfg-with-features-and-sems-in-prods
+                            lexicon-for-testing-features-and-sems-in-prods)))
+
+(deftest test-parse-with-sems
+  ; TODO!
+  (parse-and-learn-sentence
+    compiled-pcfg-test-sems-features
+    compiled-lex-test-sems-features
+    '("person" "chase" "face")))
+
