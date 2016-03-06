@@ -44,6 +44,12 @@
 (defn approx= [num1 num2]
   (= (format "%.8f" num1) (format "%.8f" num2)))
 
+(defn extract-stuff [parse syms]
+  (assoc
+    (into {} (map (fn [x] [x (get parse x)]) syms))
+    :children
+    (map #(extract-stuff %1 syms) (:children parse))))
+
 (deftest test-compiled-lexicon-is-well-formatted
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
   (is (= (get-in compiled-lexicon-for-test ["face" "face.v.01.face"]) 2.0))
@@ -59,7 +65,7 @@
   (is (approx= 0.5 (get-in compiled-pcfg-for-test ["$AP" :productions_total])))
   (is (= (:parents (get compiled-pcfg-for-test "$S")) {}))
   (is (= (:productions (get compiled-pcfg-for-test "$S"))
-         [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0}]))
+         [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0, :sem ["%1"]}]))
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
@@ -93,11 +99,13 @@
 
 (defn tree-node-tst
   ([label child] (tree-node-tst label child {}))
-  ([label child features]
+  ([label child features] (tree-node-tst label child features nil))
+  ([label child features sem]
    (tree-node label
               (get-in compiled-pcfg-for-test [label :productions 0])
               child
-              features))
+              features
+              sem))
   )
 
 (def tnode
@@ -105,17 +113,23 @@
     (tree-node-tst "$AP" [(tree-node-tst "$RP" [(tree-node-tst "$R" nil)])])))
 
 (deftest test-get-successor-states
-  (is (= (get-successor-states
-           compiled-pcfg-for-test
-           tnode
-           1.0)
-         [[(append-and-go-to-child tnode (tree-node-tst "$AA" []))
-           0.375]
-          [(append-and-go-to-child
-             tnode
-             (tree-node "$AA" (get-in compiled-pcfg-for-test ["$AA" :productions 1]) []))
-           0.625]]))
-  )
+  (let [successors (get-successor-states
+                     compiled-pcfg-for-test
+                     tnode
+                     1.0)]
+    (is (= (map last successors) [0.375 0.625]))
+    (is (=
+          (append-and-go-to-child tnode (tree-node-tst "$AA" []))
+          (-> successors first first)
+          ))
+    (is (=
+          (append-and-go-to-child
+            tnode
+            (tree-node "$AA" (get-in compiled-pcfg-for-test ["$AA" :productions 1]) []))
+          (-> successors last first)
+          ))
+    ))
+
 
 (deftest test-get-successor-states-with-features
   (let [with-feature (->
@@ -210,18 +224,20 @@
                   (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
                   "cool")]
     (is (< 0 (count updated)))
-    (is (= (-> updated keys last zp/root)
+    (is (= (-> updated keys last zp/root (extract-stuff [:label]))
            (-> pre-state-1
                (zp/edit assoc :production {:elements [(prod-el "cool.n.01")], :count 1.0})
                (append-and-go-to-child (tree-node-tst "cool.n.01" []))
-               (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))
-               zp/root)))
-    (is (= (-> updated keys first zp/root)
+               (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil {}))
+               zp/root
+               (extract-stuff [:label]))))
+    (is (= (-> updated keys first zp/root (extract-stuff [:label]))
            (-> pre-state-2
                (zp/edit assoc :production {:elements [(prod-el "cool.a.01")], :count 4.0})
                (append-and-go-to-child (tree-node-tst "cool.a.01" []))
                (append-and-go-to-child (tree-node-tst "cool.a.01.cool" nil))
-               zp/root)))
+               zp/root
+               (extract-stuff [:label]))))
     (is (= (vals updated) [0.8 0.2]))
     ))
 

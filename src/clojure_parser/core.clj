@@ -62,7 +62,8 @@
 (defn reformat-production [production]
   (assoc production
     :count (double (:count production))
-    :elements (into [] (map prod-el (:elements production))))
+    :elements (into [] (map prod-el (:elements production)))
+    :sem (or (:sem production) ["%1"]))
   )
 
 (defn reformat-pcfg-nodes [pcfg]
@@ -79,7 +80,6 @@
                            (:productions entry)))
           :parents (priority-map-gt)
           :isolate_features (into #{} (:isolate_features entry))
-          :sem (or (:sem entry) ["%1"])
           )))
     pcfg
     pcfg
@@ -221,7 +221,7 @@
 (defrecord TreeNode [label production children features sem])
 
 (defn tree-node
-  ([label production children] (tree-node label production children {} nil))
+  ([label production children] (tree-node label production children {}))
   ([label production children features]
    (tree-node label production children features nil))
   ([label production children features semantics]
@@ -233,7 +233,7 @@
   (zp/zipper
     #(-> %1 :children nil? not)
     #(-> %1 :children seq)
-    #(tree-node (:label %1) (:production %1) %2 (:features %1))
+    #(assoc %1 :children %2)
     tree))
 
 ; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
@@ -302,7 +302,8 @@
 
 (defn get-parent-state [current-state]
   (let [parent (zp/up current-state)]
-    (and parent (zp/edit parent assoc :sem (sem-for-parent parent)))))
+    (and parent (zp/edit parent assoc :sem (-> parent zp/node sem-for-parent)))
+    ))
 
 (defn get-successor-states
   [pcfg current-state current-prob]
@@ -404,7 +405,10 @@
     [current-state]
     (apply dissoc
            (:features current-state)
-           (get-in pcfg [(:label current-state) :isolate_features]))))
+           (get-in pcfg [(:label current-state) :isolate_features]))
+    (or (:sem current-state)
+        {:val (or (get-in pcfg [parent-sym :sem]) parent-sym)})
+    ))
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
@@ -414,7 +418,8 @@
     (priority-map-gt)
     (for
       [[lem-name prob] (get lexical-lkup word)]
-      [(tree-node lem-name nil nil (get-in pcfg [lem-name :features] {})) prob])))
+      [(tree-node lem-name nil nil (get-in pcfg [lem-name :features] {}))
+       prob])))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -521,7 +526,8 @@
                         syn-name
                         syn-production
                         []
-                        merged-features))
+                        merged-features
+                        {:val (or (:sem synset-entry) syn-name)}))
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
