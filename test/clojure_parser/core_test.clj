@@ -112,6 +112,9 @@
   (mk-traversable-tree
     (tree-node-tst "$AP" [(tree-node-tst "$RP" [(tree-node-tst "$R" nil)])])))
 
+(defn plain-tree [thing]
+  (-> thing zp/root (extract-stuff [:label :features])))
+
 (deftest test-get-successor-states
   (let [successors (get-successor-states
                      compiled-pcfg-for-test
@@ -119,14 +122,18 @@
                      1.0)]
     (is (= (map last successors) [0.375 0.625]))
     (is (=
-          (append-and-go-to-child tnode (tree-node-tst "$AA" []))
-          (-> successors first first)
+          (plain-tree (append-and-go-to-child tnode (tree-node-tst "$AA" [])))
+          (-> successors first first plain-tree)
           ))
     (is (=
-          (append-and-go-to-child
-            tnode
-            (tree-node "$AA" (get-in compiled-pcfg-for-test ["$AA" :productions 1]) []))
-          (-> successors last first)
+          (plain-tree
+            (append-and-go-to-child
+              tnode
+              (tree-node
+                "$AA"
+                (get-in compiled-pcfg-for-test ["$AA" :productions 1])
+                [])))
+          (-> successors last first plain-tree)
           ))
     ))
 
@@ -568,6 +575,10 @@
   (is (= (sem-for-parent parent-tree-node-with-and)
          {:val [:and ["hi" :v1] ["cat" :c1]]}))
   )
+
+(deftest test-sem-for-next
+  (is (= (sem-for-next parent-tree-node-with-and)
+         {:attributes #{"hi" "cat"}, :args []})))
 
 (def pcfg-with-features-and-sems-in-prods
   {

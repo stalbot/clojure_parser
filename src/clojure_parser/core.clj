@@ -236,6 +236,38 @@
     #(assoc %1 :children %2)
     tree))
 
+(defn lambda-args [sem]
+  (keep-indexed
+    #(if (and (string? %2) (-> %2 first (= \@))) %1)
+    (:val sem)))
+
+(declare extract-attributes)
+
+(defn extract-attributes-tmp [node]
+  (let [full-sem (:sem node)
+        sem-val (:val full-sem)
+        lambda-args (lambda-args full-sem)]
+    (cond
+      (not (empty? lambda-args))
+        ; minus 2 because 1 for the 0-indexing, one for skipping the lambda
+        #{[(first sem-val) (nth lambda-args (- (count (:children node)) 2))]}
+      (-> full-sem first (= :and))
+        (reduce into extract-attributes (:children node))
+      :else
+        #{(if (coll? sem-val) (first sem-val) sem-val)}
+      )))
+
+(def extract-attributes (memoize extract-attributes-tmp))
+
+(defn sem-for-next [cur-node]
+  {:attributes (reduce into
+                       (-> cur-node :sem :attributes (or #{}))
+                       (map extract-attributes (:children cur-node))),
+   ; if another lambda is in the scope of the phrase, it will pick up
+   ; all the 'args'
+   :args (let [child-sems (map :sem (:children cur-node))]
+           (if (some lambda-args child-sems) [] child-sems))})
+
 ; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
 ; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
 ; for production "$VP": {:elements ["$V" "$NP"], :sem ["%1" "@1" "%2"]}
@@ -283,7 +315,12 @@
   [production current-state new-label inherited-features prob-modifier]
   [(append-and-go-to-child
      current-state
-     (tree-node new-label production [] inherited-features))
+     (tree-node
+       new-label
+       production
+       []
+       inherited-features
+       (sem-for-next (zp/node current-state))))
    (* prob-modifier (:count production))])
 
 (defn get-next-features
