@@ -241,6 +241,8 @@
     #(if (and (string? %2) (-> %2 first (= \@))) %1)
     (:val sem)))
 
+(def var-unifiers #{:and})
+
 (declare extract-attributes)
 
 (defn extract-attributes-helper [node]
@@ -251,7 +253,7 @@
       (not (empty? lambda-args))
         ; minus 2 because 1 for the 0-indexing, one for skipping the lambda
         #{[(first sem-val) (nth lambda-args (- (count (:children node)) 2))]}
-      (-> full-sem first (= :and))
+      (-> full-sem first var-unifiers)
         (reduce into extract-attributes (:children node))
       :else
         #{(if (coll? sem-val) (first sem-val) sem-val)}
@@ -302,9 +304,11 @@
     sem-structure))
 
 (defn var-reduce-sem [subbed]
-  "Certain types of arguments in semantic structure dictate that all discourse
+  "var-unifier arguments in semantic structure dictate that all discourse
    variables instantiated by the children are the same and should be merged"
-  (if (#{:and} (first subbed))
+  (if (var-unifiers (first subbed))
+    ; since this is just for naming/debugging convenience, it doesn't matter much,
+    ; but this `last` call should probably be to get the head of the phrase instead
     (let [var (-> subbed last last)]
       (mapv #(if (coll? %1) [(first %1) var] %1) subbed))
     subbed))
