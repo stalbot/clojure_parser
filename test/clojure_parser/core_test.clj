@@ -637,3 +637,23 @@
             '("person" "chase" "person" "face")))))
   )
 
+(def lexicon-with-sem-net
+  {"person.n.01" {:hypernyms ["causal_agent.n.01" "organism.n.01"]
+                  :hyponyms ["actor.n.02" "adult.n.01" "adventurer.n.01"]}
+   "actor.n.02" {:hypernyms ["person.n.01"]}
+   "adult.n.01" {:hypernyms ["person.n.01"]}
+   "causal_agent.n.01" {:hyponyms {"person.n.01" 0.35 "operator.n.02" 0.15}}})
+
+(def compiled-sem-net (make-semantic-lkup lexicon-with-sem-net))
+
+(deftest test-make-semantic-lkup
+  (is (= (/ 1.0 3)
+         (get-in compiled-sem-net ["person.n.01" :hyponyms "actor.n.02"])))
+  (is (= 1.0
+         (reduce + (vals (get-in compiled-sem-net ["person.n.01" :hyponyms])))))
+  (is (= ["actor.n.02" "adult.n.01" "adventurer.n.01"]
+         (keys (get-in compiled-sem-net ["person.n.01" :hyponyms]))))
+  (is (= [0.3 0.7]
+         (sort (vals (get-in compiled-sem-net ["causal_agent.n.01" :hyponyms])))))
+  )
+

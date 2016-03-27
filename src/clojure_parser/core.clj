@@ -146,6 +146,25 @@
     lexicon
     ))
 
+(def sem-net-syms [:hypernyms :hyponyms])
+
+(defn make-semantic-lkup [lexicon]
+  (reduce-kv
+    (fn [sem-lkup syn-name lex-entry]
+      (assoc sem-lkup
+        syn-name
+        (zipmap sem-net-syms
+          (map
+            (fn [sym]
+              (let [val (get lex-entry sym)]
+                (if (map? val)
+                  (let [total (reduce + (vals val))]
+                    (zipmap (keys val) (map #(/ %1 total) (vals val))))
+                  (zipmap val (repeat (/ 1.0 (count val)))))))
+            sem-net-syms))))
+    {}
+    lexicon))
+
 (defn make-syn-production
   [[syn-name count]]
   {:elements [syn-name] :count count})
