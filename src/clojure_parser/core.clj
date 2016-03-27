@@ -243,7 +243,7 @@
 
 (declare extract-attributes)
 
-(defn extract-attributes-tmp [node]
+(defn extract-attributes-helper [node]
   (let [full-sem (:sem node)
         sem-val (:val full-sem)
         lambda-args (lambda-args full-sem)]
@@ -257,7 +257,7 @@
         #{(if (coll? sem-val) (first sem-val) sem-val)}
       )))
 
-(def extract-attributes (memoize extract-attributes-tmp))
+(def extract-attributes (memoize extract-attributes-helper))
 
 (defn sem-for-next [cur-node]
   {:attributes (reduce into
@@ -267,6 +267,22 @@
    ; all the 'args'
    :args (let [child-sems (map :sem (:children cur-node))]
            (if (some lambda-args child-sems) [] child-sems))})
+
+; TODO: delete commented out crud! here for now as a reminder to self
+;(defrecord SemanticElement
+;  [vars-to-attrs cur-var args-to-attrs])
+;
+;(defn sem-element
+;  ([vars-to-attrs] (sem-element vars-to-attrs nil nil))
+;  ([vars-to-attrs cur-var args-to-attrs]
+;    (SemanticElement. vars-to-attrs cur-var args-to-attrs)))
+;
+;(defn sem-for-next [cur-node]
+;  (let [sem-structure (get-in cur-node [:production :sem])
+;        cur-sem (:sem cur-node)]
+;    (if (= (:type sem-structure) :compound)
+;      cur-sem
+;      (assoc cur-sem :cur-var nil))))
 
 ; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
 ; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
@@ -285,13 +301,21 @@
     (sem-do-subbing \% child-sems)
     sem-structure))
 
+(defn var-reduce-sem [subbed]
+  "Certain types of arguments in semantic structure dictate that all discourse
+   variables instantiated by the children are the same and should be merged"
+  (if (#{:and} (first subbed))
+    (let [var (-> subbed last last)]
+      (mapv #(if (coll? %1) [(first %1) var] %1) subbed))
+    subbed))
+
 (defn lambda-reduce-sem [subbed]
   (let [possible-lambda (first subbed)]
     (if (not (and (coll? possible-lambda)
                   (some
                     #(and (string? %1) (-> %1 first (= \@)))
                     possible-lambda)))
-      (if (-> subbed count (= 1)) (first subbed) subbed)
+      (if (= (count subbed) 1) (first subbed) subbed)
       (let [args (into [] (rest subbed))]
         (map
           (sem-do-subbing \@ args)
@@ -304,7 +328,7 @@
         sem-structure (-> parent-node :production :sem)
         subbed (sub-child-sems sem-structure child-sems)
         reduced-sem (lambda-reduce-sem subbed)]
-    (assoc cur-sem :val reduced-sem)))
+    (assoc cur-sem :val (var-reduce-sem reduced-sem))))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -434,6 +458,23 @@
     )
   )
 
+(defn discourse-var-num [state num mult]
+  "gets a unique number to identify a discourse variable,
+   assuming that there are never more than 8 entries in any production
+   and that no two discourse variables will ever be instantiated
+   along the same path of the tree"
+  (let [parent (zp/up state)
+        ; hack the clojure zip internals a bit for better perf
+        num (+ num (* mult (-> state last :l count)))]
+    (if (nil? parent)
+      num
+      (discourse-var-num parent num (* mult 8)))))
+
+(defn discourse-var [state syn-name]
+  ; 0 is a special number for the first state (since we have no structure to work with)
+  (let [num (if (nil? state) 0 (discourse-var-num state 0 1))]
+    (keyword (str syn-name "_" num))))
+
 (defn make-next-state
   [pcfg current-state parent-sym production]
   (tree-node
@@ -444,7 +485,9 @@
            (:features current-state)
            (get-in pcfg [(:label current-state) :isolate_features]))
     (or (:sem current-state)
-        {:val (or (get-in pcfg [parent-sym :sem]) parent-sym)})
+        ; TODO: this should be unified with similar logic in update-state-probs-for-lemma
+        {:val [(or (get-in pcfg [parent-sym :sem]) parent-sym)
+               (discourse-var nil parent-sym)]})
     ))
 
 (defn create-first-states
@@ -534,6 +577,8 @@
   (first (filter #(= first-sym (-> %1 :elements first :label))
                  (:productions pcfg-entry))))
 
+
+
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
   ; TODO: not amazing, this trick relies on the knowledge that
@@ -564,7 +609,8 @@
                         syn-production
                         []
                         merged-features
-                        {:val (or (:sem synset-entry) syn-name)}))
+                        {:val [(or (:sem synset-entry) syn-name)
+                               (discourse-var state syn-name)]}))
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob

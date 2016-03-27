@@ -551,7 +551,7 @@
   (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["hi" :v1]}}] {} {}))
 
 (def parent-tree-node-for-sem-super-simple
-  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val "chase.v.01"}}] {} {}))
+  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["chase.v.01" :c1]}}] {} {}))
 
 (def parent-tree-node-with-lambda
   (tree-node "$VP"
@@ -569,11 +569,11 @@
   (is (= (sem-for-parent parent-tree-node-for-sem-simple)
          {:val ["hi" :v1]}))
   (is (= (sem-for-parent parent-tree-node-for-sem-super-simple)
-         {:val "chase.v.01"}))
+         {:val ["chase.v.01" :c1]}))
   (is (= (sem-for-parent parent-tree-node-with-lambda)
          {:val ["hi" :v1 ["cat" :c1]]}))
   (is (= (sem-for-parent parent-tree-node-with-and)
-         {:val [:and ["hi" :v1] ["cat" :c1]]}))
+         {:val [:and ["hi" :c1] ["cat" :c1]]}))
   )
 
 (deftest test-sem-for-next
@@ -620,14 +620,16 @@
 
 (deftest test-parse-with-sems
   (is (=
-        {:val '("chase.v.01" "person.n.01" "face.n.01")}
+        {:val '(["chase.v.01" :chase.v.01_8] ["person.n.01" :person.n.01_0] ["face.n.01" :face.n.01_72])}
         (extract-first-sem-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("person" "chase" "face")))))
   (is (=
-        {:val '("chase.v.01" "person.n.01" (:and "person.n.01" "face.n.01"))}
+        {:val '(["chase.v.01" :chase.v.01_8]
+                ["person.n.01" :person.n.01_0]
+                (:and ["person.n.01" :face.n.01_73] ["face.n.01" :face.n.01_73]))}
         (extract-first-sem-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
