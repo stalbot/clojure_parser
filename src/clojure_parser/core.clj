@@ -280,78 +280,52 @@
 
 (def extract-attributes (memoize extract-attributes-helper))
 
-(defn sem-for-next [cur-node]
-  {:attributes (reduce into
-                       (-> cur-node :sem :attributes (or #{}))
-                       (map extract-attributes (:children cur-node))),
-   ; if another lambda is in the scope of the phrase, it will pick up
-   ; all the 'args'
-   :args (let [child-sems (map :sem (:children cur-node))]
-           (if (some lambda-args child-sems) [] child-sems))})
+(defn new-sem-var [sem]
+  (keyword (str "v" (count (:val sem)))))
 
-; TODO: delete commented out crud! here for now as a reminder to self
-;(defrecord SemanticElement
-;  [vars-to-attrs cur-var args-to-attrs])
-;
-;(defn sem-element
-;  ([vars-to-attrs] (sem-element vars-to-attrs nil nil))
-;  ([vars-to-attrs cur-var args-to-attrs]
-;    (SemanticElement. vars-to-attrs cur-var args-to-attrs)))
-;
-;(defn sem-for-next [cur-node]
-;  (let [sem-structure (get-in cur-node [:production :sem])
-;        cur-sem (:sem cur-node)]
-;    (if (= (:type sem-structure) :compound)
-;      cur-sem
-;      (assoc cur-sem :cur-var nil))))
+(defn sem-for-next [cur-node]
+  (let [children (:children cur-node)
+        next-index (count children)
+        operation (-> cur-node :production :sem :operation)
+        idx-args (:idx-args operation)
+        is-target? (-> idx-args first (= next-index))
+        cur-sem (:sem cur-node)]
+    (condp = (or (:op-arg operation) :unify-var)
+      :pass-args (if is-target?
+                   (assoc cur-sem
+                     :cur-args
+                     (mapv #(->> %1 (get children) :sem) (rest idx-args)))
+                   cur-sem)
+      :unify-var (if (empty? children)
+                   (assoc cur-sem :cur-var (new-sem-var cur-sem))
+                   (assoc cur-sem :cur-var (-> children last :sem :cur-var)))
+      :pass-lambda (if is-target?
+                     (assoc cur-sem
+                       :lambda
+                       (-> children (get (second idx-args)) :sem :lambda))
+                     cur-sem)
+      )))
 
 ; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
 ; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
 ; for production "$VP": {:elements ["$V" "$NP"], :sem ["%1" "@1" "%2"]}
 ; for production "$NN": {:elements ["$N"], :sem "%1"} ; (default)
-; for node: {:sem {:attributes [], :val nil, :args []}} ; (val set on up-pass)
-(defn sem-do-subbing [sub-prefix from-vec]
-  (fn [sym]
-    (if (and (string? sym) (= (first sym) sub-prefix))
-      ; TODO: this junk should happen at pcfg compile time
-      (get from-vec (- (read-string (subs sym 1)) 1))
-      sym)))
-
-(defn sub-child-sems [sem-structure child-sems]
-  (map
-    (sem-do-subbing \% child-sems)
-    sem-structure))
-
-(defn var-reduce-sem [subbed]
-  "var-unifier arguments in semantic structure dictate that all discourse
-   variables instantiated by the children are the same and should be merged"
-  (if (var-unifiers (first subbed))
-    ; since this is just for naming/debugging convenience, it doesn't matter much,
-    ; but this `last` call should probably be to get the head of the phrase instead
-    (let [var (-> subbed last last)]
-      (mapv #(if (coll? %1) [(first %1) var] %1) subbed))
-    subbed))
-
-(defn lambda-reduce-sem [subbed]
-  (let [possible-lambda (first subbed)]
-    (if (not (and (coll? possible-lambda)
-                  (some
-                    #(and (string? %1) (-> %1 first (= \@)))
-                    possible-lambda)))
-      (if (= (count subbed) 1) (first subbed) subbed)
-      (let [args (into [] (rest subbed))]
-        (map
-          (sem-do-subbing \@ args)
-          possible-lambda)))
-  ))
-
 (defn sem-for-parent [parent-node]
-  (let [cur-sem (:sem parent-node)
-        child-sems (into [] (map #(-> %1 :sem :val) (:children parent-node)))
-        sem-structure (-> parent-node :production :sem)
-        subbed (sub-child-sems sem-structure child-sems)
-        reduced-sem (lambda-reduce-sem subbed)]
-    (assoc cur-sem :val (var-reduce-sem reduced-sem))))
+  (let [child-sem (-> parent-node :children last :sem)
+        child-vars (mapv #(-> %1 :sem :cur-var) (:children parent-node))]
+    (assoc
+      child-sem
+      :val
+      (reduce
+        (fn [sem-val rule]
+          (let [child-vars  (mapv #(get child-vars %1) (:idx-args rule))
+                new-condition (into [(:sem-arg rule)] child-vars)]
+            (reduce
+              (fn [sem-val var] (update sem-val var #(conj %1 new-condition)))
+              sem-val
+              child-vars)))
+        (:val child-sem)
+        (-> parent-node :production :sem :rules)))))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -600,7 +574,29 @@
   (first (filter #(= first-sym (-> %1 :elements first :label))
                  (:productions pcfg-entry))))
 
+(defn update-sem [sem new-entry]
+  )
 
+(defn resolve-lambda [lambda args]
+  )
+
+(defn sem-for-lemma-node [node syn-name synset-entry]
+  "Given the node that will have this lemma with syn-name and associated
+   syn-entry as a child, return the updated semantic record. This means
+   instatiating a new truth condition."
+  ; TODO: all this naming has gotten really funky with sem and entry and lambda
+  (let [node-sem (:sem node)
+        entry-sem (or (:sem synset-entry) {:val syn-name})
+        entry-lambda (:lambda entry-sem)
+        [lambda-sem-entry args] (if entry-lambda
+                                  [entry-lambda [(:cur-var node-sem)]]
+                                  [(:lambda entry-sem) (:cur-args node-sem)])
+        new-sem (if lambda-sem-entry
+                  (update-sem node-sem (resolve-lambda lambda-sem-entry args))
+                  node-sem)
+        ]
+    (update-sem new-sem entry-sem)
+    ))
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
@@ -684,6 +680,9 @@
         ))))
 
 (defn add-sems-at-eos
+  "Starting from the bottom rightmost node, add the semantic elements
+   going back up the tree. Don't add sematics until we reach the
+   lexical level (e.g. cat.n.01, not cat.n.01.cat)"
   ([pcfg state] (add-sems-at-eos pcfg state false))
   ([pcfg state add-sem]
    (let [node (zp/node state)
