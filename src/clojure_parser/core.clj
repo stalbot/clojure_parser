@@ -59,11 +59,53 @@
     (let [[label features] element] (ProductionElement. label features))
     (ProductionElement. element {})))
 
+(defn s-idx [sem-element]
+  (read-string (re-find #"\d+" sem-element)))
+
+; ensure we aren't duplicating this same structure all over the place in mem
+(def simple-inherit-var {:inherit-var true})
+
+(defn compile-prod-sem [production]
+  (let [raw-sem (or (:sem production) ["&0"])
+        operations (into [] (repeat (count (:elements production)) {}))
+        with-inherit (map s-idx (filter #(re-find #"\&" %1) raw-sem))
+        operations (reduce
+                     #(assoc %1 %2 simple-inherit-var)
+                     operations
+                     with-inherit)
+        called (if (re-find #"\#" (first raw-sem)) (s-idx (first raw-sem)))
+        called-args-idxs (if called
+                           (keep-indexed
+                            #(if (re-find #"\%" %2) [(s-idx %2) %1])
+                            raw-sem))]
+    (reduce
+      ; TODO: this NEEDS to be able to handle more than 1 of each kind!
+      ; TODO: this needs to actually do something with the @ args!
+      (fn [operations [child-idx form-idx]]
+        (if (< child-idx called)
+          (update
+            operations
+            called
+            #(assoc %1
+               :op-type :pass-arg
+               :arg-idx child-idx
+               :target-idx form-idx))
+          (update
+            operations
+            child-idx
+            #(assoc %1
+              :op-type :call-lambda
+              :arg-idx called
+              :target-idx form-idx))
+          ))
+      operations
+      called-args-idxs)))
+
 (defn reformat-production [production]
   (assoc production
     :count (double (:count production))
-    :elements (into [] (map prod-el (:elements production)))
-    :sem (or (:sem production) ["%1"]))
+    :elements (mapv prod-el (:elements production))
+    :sem (compile-prod-sem production))
   )
 
 (defn reformat-pcfg-nodes [pcfg]
@@ -283,33 +325,80 @@
 (defn new-sem-var [sem]
   (keyword (str "v" (count (:val sem)))))
 
+(defn pcfg-node-opts-for-child [node child-idx]
+  ; TODO: better compile the PCFG to work with this format!
+  (get-in node [:production :sem child-idx])
+  )
+
+(defn resolve-full-lambda [next-sem lamdbda-form]
+  ; first element of lambda form is name
+  (reduce
+    (fn [next-sem var]
+      (update-in next-sem [:val var] #(conj %1 lamdbda-form)))
+    next-sem
+    (rest lamdbda-form)))
+
+(defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
+  (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
+        remaining-idxs (remove (:remaining-idxs lambda) lambda-idx)]
+    (if (empty? remaining-idxs)
+      (resolve-full-lambda next-sem (:form subbed-lambda))
+      (assoc
+        next-sem
+        :lambda
+        (assoc subbed-lambda :remaining-idxs remaining-idxs)))))
+
+(defn call-lambda [next-sem cur-node op]
+  ; TODO: consider making these things the same as arg-map below
+  (let [arg-idx (:arg-idx op)
+        lambda-idx (:target-idx op)
+        lambda (get-in cur-node [:children arg-idx :sem :lambda])]
+    (resolve-lambda next-sem lambda lambda-idx (:cur-var next-sem))))
+
+(defn complete-condition [next-sem cur-node operation]
+  (let [form (:form operation)
+        arg-map (:arg-map operation)
+        ; form is like [nil "or" nil]
+        ; arg-map is like {1: 2, 2: 1}
+        subbed-form (reduce-kv
+                      (fn [subbed-form arg-idx child-idx]
+                        (assoc subbed-form
+                          arg-idx
+                          (get-in
+                            cur-node
+                            [:children child-idx :sem :cur-var])))
+                      form
+                      arg-map)]
+    (reduce
+      (fn [next-sem child-idx]
+        (update-in
+          next-sem
+          [:val (get-in cur-node [:children child-idx :sem :cur-var])]
+          #(conj %1 subbed-form)))
+      next-sem
+      (vals arg-map))
+    ))
+
 (defn sem-for-next [cur-node]
   (let [children (:children cur-node)
         next-index (count children)
-        operation (-> cur-node :production :sem :operation)
-        idx-args (:idx-args operation)
-        is-target? (-> idx-args first (= next-index))
-        cur-sem (:sem cur-node)]
-    (condp = (or (:op-arg operation) :unify-var)
-      :pass-args (if is-target?
-                   (assoc cur-sem
-                     :cur-args
-                     (mapv #(->> %1 (get children) :sem) (rest idx-args)))
-                   cur-sem)
-      :unify-var (if (empty? children)
-                   (assoc cur-sem :cur-var (new-sem-var cur-sem))
-                   (assoc cur-sem :cur-var (-> children last :sem :cur-var)))
-      :pass-lambda (if is-target?
-                     (assoc cur-sem
-                       :lambda
-                       (-> children (get (second idx-args)) :sem :lambda))
-                     cur-sem)
+        cur-sem (-> cur-node :children last :sem)
+        operation (pcfg-node-opts-for-child cur-node next-index)
+        next-sem (if (:inherit-var operation)
+                   (assoc cur-sem :cur-var (:cur-var (:sem cur-node)))
+                   (assoc cur-sem :cur-var (new-sem-var cur-sem)))]
+    (condp = (:op-type operation)
+      :call-lambda (call-lambda next-sem cur-node operation)
+      :pass-arg (assoc next-sem
+                  :cur-arg
+                  (get-in
+                    cur-node
+                    [:children (:arg-idx operation) :sem :cur-var]))
+      :complete-condition (complete-condition next-sem cur-node operation)
+      next-sem ; default case
       )))
 
-; for production "$NP": {:elements ["$AP" "$NN], :sem [:and "%1" "%2"]}
-; for production "$S": {:elements ["$NP" "$VP], :sem ["%2" "%1"]}
-; for production "$VP": {:elements ["$V" "$NP"], :sem ["%1" "@1" "%2"]}
-; for production "$NN": {:elements ["$N"], :sem "%1"} ; (default)
+; TODO: unused, for record purposes with below, delete
 (defn sem-for-parent [parent-node]
   (let [child-sem (-> parent-node :children last :sem)
         child-vars (mapv #(-> %1 :sem :cur-var) (:children parent-node))]
@@ -326,6 +415,12 @@
               child-vars)))
         (:val child-sem)
         (-> parent-node :production :sem :rules)))))
+
+(defn sem-for-parent [parent-node]
+  (let [final-child-sem (-> parent-node :children last :sem)]
+    (assoc (:sem parent-node)
+      :val (:val final-child-sem)
+      :cur-arg (:cur-arg final-child-sem))))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -574,29 +669,20 @@
   (first (filter #(= first-sym (-> %1 :elements first :label))
                  (:productions pcfg-entry))))
 
-(defn update-sem [sem new-entry]
-  )
-
-(defn resolve-lambda [lambda args]
-  )
-
 (defn sem-for-lemma-node [node syn-name synset-entry]
   "Given the node that will have this lemma with syn-name and associated
    syn-entry as a child, return the updated semantic record. This means
    instatiating a new truth condition."
-  ; TODO: all this naming has gotten really funky with sem and entry and lambda
-  (let [node-sem (:sem node)
-        entry-sem (or (:sem synset-entry) {:val syn-name})
+  (let [entry-sem (or (:sem synset-entry) {:val syn-name})
         entry-lambda (:lambda entry-sem)
-        [lambda-sem-entry args] (if entry-lambda
-                                  [entry-lambda [(:cur-var node-sem)]]
-                                  [(:lambda entry-sem) (:cur-args node-sem)])
-        new-sem (if lambda-sem-entry
-                  (update-sem node-sem (resolve-lambda lambda-sem-entry args))
-                  node-sem)
-        ]
-    (update-sem new-sem entry-sem)
-    ))
+        node-sem (:sem node)]
+    (if entry-lambda
+      (resolve-lambda node-sem entry-lambda 0 (:cur-arg node-sem))
+      (update-in
+        node-sem
+        [:val (:cur-var node-sem)]
+        #(conj %1 (:val entry-sem)))
+      )))
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
@@ -628,8 +714,9 @@
                         syn-production
                         []
                         merged-features
-                        {:val [(or (:sem synset-entry) syn-name)
-                               (discourse-var state syn-name)]}))
+                        (sem-for-lemma-node (zp/node state)
+                                            syn-name
+                                            synset-entry)))
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob

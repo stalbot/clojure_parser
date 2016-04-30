@@ -547,51 +547,42 @@
              (-> parses first first :children last :children first :children first :label)))
     ))
 
-(def parent-tree-node-for-sem-simple
-  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["hi" :v1]}}] {} {}))
-
-(def parent-tree-node-for-sem-super-simple
-  (tree-node "$VP" {:sem ["%1"]} [{:sem {:val ["chase.v.01" :c1]}}] {} {}))
-
-(def parent-tree-node-with-lambda
-  (tree-node "$VP"
-    {:sem ["%1" "%2"]}
-    [{:sem {:val ["hi" :v1 "@1"]}} {:sem {:val ["cat" :c1]}}]
-    {} {}))
+(def example-parent-tree-node
+  (tree-node
+    "el1"
+    {:sem [{} {} {:inherit-var true}]}
+    [{:sem "shouldn't matter"}
+     {:sem {:val {:v1 ["hi" [:v1 :v2]] :v2 ["yo" "thing" [:v1 :v2]]}
+            :cur-var :v4}}]
+    {}
+    {:cur-var :v2}))
 
 (def parent-tree-node-with-and
   (tree-node "$VP"
              {:sem [:and "%1" "%2"]}
              [{:sem {:val ["hi" :v1]}} {:sem {:val ["cat" :c1]}}]
-             {} {}))
+             ))
 
 (deftest test-sem-for-parent
-  (is (= (sem-for-parent parent-tree-node-for-sem-simple)
-         {:val ["hi" :v1]}))
-  (is (= (sem-for-parent parent-tree-node-for-sem-super-simple)
-         {:val ["chase.v.01" :c1]}))
-  (is (= (sem-for-parent parent-tree-node-with-lambda)
-         {:val ["hi" :v1 ["cat" :c1]]}))
-  (is (= (sem-for-parent parent-tree-node-with-and)
-         {:val [:and ["hi" :c1] ["cat" :c1]]}))
+  (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
+         [{:v1 ["hi" [:v1 :v2]] :v2 ["yo" "thing" [:v1 :v2]]} :v2]))
   )
 
 (deftest test-sem-for-next
-  (is (= (sem-for-next parent-tree-node-with-and)
-         {:attributes #{"hi" "cat"}, :args []})))
+  (is (= (:cur-var (sem-for-next example-parent-tree-node)) :v2)))
 
 (def pcfg-with-features-and-sems-in-prods
   {
-   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :sem ["%2" "%1"]}]
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :sem ["#&1" "%0"]}]
          :isolate_features ["plural" "person"]}
-   "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3, :sem [:and "%1" "%2"]}
+   "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3, :sem ["&0" "&1"]}
                         {:elements ["$N"], :count 0.7}]}
    "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
                          :count 0.4,
-                         :sem ["%1" "@1" "%2"],
+                         :sem ["#&0" "@0" "%1"],
                          :head 0}
                         {:elements [["$V" {"trans" false}]],
-                         :sem ["%1" "@1"]
+                         :sem ["&#0" "@0"]
                          :count 0.6}]}
    })
 
@@ -617,6 +608,16 @@
 
 (defn extract-first-sem-from-parse [parse]
   (-> parse last first first :sem))
+
+(deftest test-pcfg-sem-formatting
+  (is (= (set [[{:inherit-var true}] [{:inherit-var true} {:inherit-var true}]])
+         (set (map :sem (get-in compiled-pcfg-test-sems-features ["$NP" :productions])))))
+  (is (= (set [[{:inherit-var true}]
+               [{:inherit-var true}
+                {:op-type :call-lambda, :arg-idx 0, :target-idx 2}]])
+         (set (map :sem (get-in compiled-pcfg-test-sems-features ["$VP" :productions])))))
+  (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1}]
+         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions]))))))
 
 (deftest test-parse-with-sems
   (is (=
