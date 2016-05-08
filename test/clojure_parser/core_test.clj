@@ -64,8 +64,8 @@
   (is (approx= 1.3 (get-in compiled-pcfg-for-test ["$NP" :productions_total])))
   (is (approx= 0.5 (get-in compiled-pcfg-for-test ["$AP" :productions_total])))
   (is (= (:parents (get compiled-pcfg-for-test "$S")) {}))
-  (is (= (:productions (get compiled-pcfg-for-test "$S"))
-         [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0, :sem ["%1"]}]))
+  (is (= (map #(dissoc % :sem) (:productions (get compiled-pcfg-for-test "$S")))
+         [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0}]))
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
@@ -161,9 +161,11 @@
   ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
         learned (infer-possible-states compiled-pcfg-for-test child)]
-    (is (= (-> learned keys first) (-> realistic-tnode
-                                       zp/down
-                                       (append-and-go-to-child (tree-node "$N" nil [])))))
+    (is (= (-> learned keys first plain-tree)
+           (-> realistic-tnode
+               zp/down
+               (append-and-go-to-child (tree-node "$N" nil []))
+               plain-tree)))
     (is (approx= (first (vals learned)) 1.0))
   ))
 
@@ -552,24 +554,37 @@
     "el1"
     {:sem [{} {} {:inherit-var true}]}
     [{:sem "shouldn't matter"}
-     {:sem {:val {:v1 ["hi" [:v1 :v2]] :v2 ["yo" "thing" [:v1 :v2]]}
-            :cur-var :v4}}]
+     {:sem {:val {:v0 ["hi" [:v0 :v1]] :v1 ["yo" "thing" [:v0 :v1]]}
+            :cur-var :v2}}]
     {}
-    {:cur-var :v2}))
+    {:cur-var :v1}))
 
-(def parent-tree-node-with-and
-  (tree-node "$VP"
-             {:sem [:and "%1" "%2"]}
-             [{:sem {:val ["hi" :v1]}} {:sem {:val ["cat" :c1]}}]
-             ))
+(def tree-node-with-lambda
+  (tree-node
+    "el1"
+    {:sem [{} {} {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]}
+    [{:sem {:cur-var :v3}}
+     {:sem {:val {:v0 ["stuff"], :v1 [], :v2 [], :v3 []},
+            :cur-var :v3,
+            :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
+    {}
+    {:cur-var :v3}))
 
 (deftest test-sem-for-parent
   (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
-         [{:v1 ["hi" [:v1 :v2]] :v2 ["yo" "thing" [:v1 :v2]]} :v2]))
+         [{:v0 ["hi" [:v0 :v1]] :v1 ["yo" "thing" [:v0 :v1]]} :v1]))
   )
 
 (deftest test-sem-for-next
-  (is (= (:cur-var (sem-for-next example-parent-tree-node)) :v2)))
+  (is (= (:cur-var (sem-for-next example-parent-tree-node)) :v1))
+  (is (= (:val (sem-for-next example-parent-tree-node))
+         (get-in example-parent-tree-node [:children 1 :sem :val])))
+  (let [next (sem-for-next tree-node-with-lambda)]
+    (is (= (:lambda next) nil))
+    (is (= (-> next :val :v0) ["stuff", ["a_verb" :v0 :v4]]))
+    (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))
+    )
+  )
 
 (def pcfg-with-features-and-sems-in-prods
   {
@@ -606,8 +621,8 @@
                             pcfg-with-features-and-sems-in-prods
                             lexicon-for-testing-features-and-sems-in-prods)))
 
-(defn extract-first-sem-from-parse [parse]
-  (-> parse last first first :sem))
+(defn extract-first-sem-vals-from-parse [parse]
+  (-> parse last first first :sem :val))
 
 (deftest test-pcfg-sem-formatting
   (is (= (set [[{:inherit-var true}] [{:inherit-var true} {:inherit-var true}]])
@@ -621,17 +636,27 @@
 
 (deftest test-parse-with-sems
   (is (=
-        {:val '(["chase.v.01" :chase.v.01_8] ["person.n.01" :person.n.01_0] ["face.n.01" :face.n.01_72])}
-        (extract-first-sem-from-parse
+        {:v0 #{"person.n.01" [:v1 :v0]}
+         :v1 #{"walk.v.01" [:v1 :v0]}}
+         (extract-first-sem-vals-from-parse
+           (parse-and-learn-sentence
+             compiled-pcfg-test-sems-features
+             compiled-lex-test-sems-features
+             '("person" "walk")))))
+  (is (=
+        {:v0 #{"person.n.01" [:v1 :v0 :v2]}
+         :v1 #{"walk.v.02" [:v1 :v0 :v2]}
+         :v2 #{["face.n.01" [:v1 :v0 :v2]]}}
+        (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
-            '("person" "chase" "face")))))
+            '("person" "walk" "face")))))
   (is (=
-        {:val '(["chase.v.01" :chase.v.01_8]
-                ["person.n.01" :person.n.01_0]
-                (:and ["person.n.01" :face.n.01_73] ["face.n.01" :face.n.01_73]))}
-        (extract-first-sem-from-parse
+        {:v0 #{"person.n.01" [:v1 :v0 :v2]}
+         :v1 #{"chase.v.01" [:v1 :v0 :v2]}
+         :v2 #{["face.n.01" "person.n.01" [:v1 :v0 :v2]]}}
+        (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features

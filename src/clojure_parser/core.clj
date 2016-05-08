@@ -151,7 +151,6 @@
         plain-pcfg-tree
         ))))
 
-
 (defn make-lem-pcfg-name
   [syn-name surface-word]
   (str syn-name "." surface-word))
@@ -322,11 +321,14 @@
 
 (def extract-attributes (memoize extract-attributes-helper))
 
-(defn new-sem-var [sem]
-  (keyword (str "v" (count (:val sem)))))
+(defn with-new-sem-var [sem]
+  (let [sem (or sem {:val {}})
+        new-var (keyword (str "v" (count (:val sem))))]
+    (-> sem
+        (assoc :cur-var new-var)
+        (assoc-in [:val new-var] #{}))))
 
 (defn pcfg-node-opts-for-child [node child-idx]
-  ; TODO: better compile the PCFG to work with this format!
   (get-in node [:production :sem child-idx])
   )
 
@@ -340,22 +342,24 @@
 
 (defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
   (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
-        remaining-idxs (remove (:remaining-idxs lambda) lambda-idx)]
+        remaining-idxs (remove #(= % lambda-idx) (:remaining-idxs lambda))]
     (if (empty? remaining-idxs)
-      (resolve-full-lambda next-sem (:form subbed-lambda))
+      (resolve-full-lambda (dissoc next-sem :lambda) (:form subbed-lambda))
       (assoc
         next-sem
         :lambda
         (assoc subbed-lambda :remaining-idxs remaining-idxs)))))
 
 (defn call-lambda [next-sem cur-node op]
-  ; TODO: consider making these things the same as arg-map below
+  ; TODO: consider making these symbols the same as arg-map below
   (let [arg-idx (:arg-idx op)
         lambda-idx (:target-idx op)
         lambda (get-in cur-node [:children arg-idx :sem :lambda])]
     (resolve-lambda next-sem lambda lambda-idx (:cur-var next-sem))))
 
 (defn complete-condition [next-sem cur-node operation]
+  ; TODO: there's nothing in PCFG compilation that would trigger this!
+  ; aka it's probably broken ;(
   (let [form (:form operation)
         arg-map (:arg-map operation)
         ; form is like [nil "or" nil]
@@ -380,13 +384,18 @@
     ))
 
 (defn sem-for-next [cur-node]
+  "Given a node with zero or more children, get the sem for the next
+   (or first) child. Look up the relevant sematic entries and complete
+   any conditions, lambdas, or arg passing that needs to happen."
   (let [children (:children cur-node)
         next-index (count children)
-        cur-sem (-> cur-node :children last :sem)
+        cur-sem (:sem cur-node)
         operation (pcfg-node-opts-for-child cur-node next-index)
-        next-sem (if (:inherit-var operation)
+        is-inheriting (:inherit-var operation)
+        next-sem (if is-inheriting
                    (assoc cur-sem :cur-var (:cur-var (:sem cur-node)))
-                   (assoc cur-sem :cur-var (new-sem-var cur-sem)))]
+                   (with-new-sem-var cur-sem))
+        ]
     (condp = (:op-type operation)
       :call-lambda (call-lambda next-sem cur-node operation)
       :pass-arg (assoc next-sem
@@ -398,29 +407,21 @@
       next-sem ; default case
       )))
 
-; TODO: unused, for record purposes with below, delete
 (defn sem-for-parent [parent-node]
-  (let [child-sem (-> parent-node :children last :sem)
-        child-vars (mapv #(-> %1 :sem :cur-var) (:children parent-node))]
-    (assoc
-      child-sem
-      :val
-      (reduce
-        (fn [sem-val rule]
-          (let [child-vars  (mapv #(get child-vars %1) (:idx-args rule))
-                new-condition (into [(:sem-arg rule)] child-vars)]
-            (reduce
-              (fn [sem-val var] (update sem-val var #(conj %1 new-condition)))
-              sem-val
-              child-vars)))
-        (:val child-sem)
-        (-> parent-node :production :sem :rules)))))
-
-(defn sem-for-parent [parent-node]
-  (let [final-child-sem (-> parent-node :children last :sem)]
-    (assoc (:sem parent-node)
-      :val (:val final-child-sem)
-      :cur-arg (:cur-arg final-child-sem))))
+  "When moving up a hierarchy, we need to carry the state of the new semantic
+   entry we've created up to the parent."
+  (let [final-child-sem (-> parent-node :children last :sem)
+        parent-sem (:sem parent-node)
+        operation (pcfg-node-opts-for-child
+                    parent-node
+                    (- (count (:children parent-node)) 1))
+        cur-var (if (:inherit-var operation) (:cur-var final-child-sem))]
+    (if (and parent-sem cur-var)
+      (assoc parent-sem
+        :val (:val final-child-sem)
+        :cur-arg (:cur-arg final-child-sem)
+        :cur-var cur-var)
+      (with-new-sem-var final-child-sem))))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -479,7 +480,8 @@
                 new-label
                 nil
                 []
-                next-features))
+                next-features
+                (sem-for-next current-node)))
             current-prob]]
           (let [new-productions (get-in pcfg [new-label :productions])
                 prob-modifier (/ current-prob
@@ -550,37 +552,24 @@
     )
   )
 
-(defn discourse-var-num [state num mult]
-  "gets a unique number to identify a discourse variable,
-   assuming that there are never more than 8 entries in any production
-   and that no two discourse variables will ever be instantiated
-   along the same path of the tree"
-  (let [parent (zp/up state)
-        ; hack the clojure zip internals a bit for better perf
-        num (+ num (* mult (-> state last :l count)))]
-    (if (nil? parent)
-      num
-      (discourse-var-num parent num (* mult 8)))))
-
-(defn discourse-var [state syn-name]
-  ; 0 is a special number for the first state (since we have no structure to work with)
-  (let [num (if (nil? state) 0 (discourse-var-num state 0 1))]
-    (keyword (str syn-name "_" num))))
-
-(defn make-next-state
+(defn make-next-initial-state
+  "Creates the next parent of the current state in the hierarchy.
+   E.g. $AP -> $RP $A production and a current state of $RP,
+   will return a new parent with the $AP, containing that $RP node"
   [pcfg current-state parent-sym production]
-  (tree-node
-    parent-sym
-    production
-    [current-state]
-    (apply dissoc
-           (:features current-state)
-           (get-in pcfg [(:label current-state) :isolate_features]))
-    (or (:sem current-state)
-        ; TODO: this should be unified with similar logic in update-state-probs-for-lemma
-        {:val [(or (get-in pcfg [parent-sym :sem]) parent-sym)
-               (discourse-var nil parent-sym)]})
-    ))
+  (let [parent (tree-node
+                 parent-sym
+                 production
+                 [current-state]
+                 (apply dissoc
+                        (:features current-state)
+                        (get-in pcfg
+                          [(:label current-state) :isolate_features]))
+                 nil)
+        parent-sem (if (-> current-state :sem nil?)
+                     {:val {:v0 #{parent-sym}}, :cur-var :v0}
+                     (sem-for-parent parent))]
+    (assoc parent :sem parent-sem)))
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
@@ -612,6 +601,10 @@
         found-states))))
 
 (defn parents-with-normed-probs
+  "Given a PCFG and a label, find all the productions that might
+   have generated this label on the left side, then normalize all
+   their probabilities (this is easy, since we optimized for it in
+   building our pcfg with :parents and :parents_total)"
   [pcfg label]
   (let [pcfg-entry (get pcfg label)
         total (:parents_total pcfg-entry)]
@@ -640,12 +633,12 @@
                     [frontier
                      (assoc
                        found
-                       (make-next-state pcfg current-state parent-sym prod)
+                       (make-next-initial-state pcfg current-state parent-sym prod)
                        (* prob current-prob))
                      ]
                     [(assoc
                        frontier
-                       (make-next-state pcfg current-state parent-sym prod)
+                       (make-next-initial-state pcfg current-state parent-sym prod)
                        (* prob current-prob))
                      found
                      ])))
@@ -772,12 +765,12 @@
    lexical level (e.g. cat.n.01, not cat.n.01.cat)"
   ([pcfg state] (add-sems-at-eos pcfg state false))
   ([pcfg state add-sem]
-   (let [node (zp/node state)
-         add-sem (or add-sem (:lex-node (get pcfg (:label node))))
-         state (if add-sem
-                 (zp/edit state assoc :sem (sem-for-parent node))
-                 state)
-         parent (zp/up state)]
+   (let [parent (zp/up state)
+         parent-node (and parent (zp/node parent))
+         add-sem (or add-sem (:lex-node (get pcfg (:label parent-node))))
+         parent (if (and add-sem parent)
+                  (zp/edit parent assoc :sem (sem-for-parent parent-node))
+                  parent)]
      (if parent (add-sems-at-eos pcfg parent add-sem) state)
      )))
 
@@ -805,7 +798,6 @@
       (assoc parses (zp/root state) prob))
     (priority-map-gt)
     states-and-probs))
-
 
 (defn update-pcfg-count
   [pcfg cur-node prob]
