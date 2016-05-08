@@ -569,16 +569,21 @@
             :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
     {}
     {:cur-var :v3}))
+(def tree-node-with-lambda
+  (assoc tree-node-with-lambda :sem (sem-for-parent tree-node-with-lambda)))
 
 (deftest test-sem-for-parent
   (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
          [{:v0 ["hi" [:v0 :v1]] :v1 ["yo" "thing" [:v0 :v1]]} :v1]))
   )
 
+(def example-parent-tree-node1
+  (assoc example-parent-tree-node :sem (sem-for-parent example-parent-tree-node)))
+
 (deftest test-sem-for-next
-  (is (= (:cur-var (sem-for-next example-parent-tree-node)) :v1))
-  (is (= (:val (sem-for-next example-parent-tree-node))
-         (get-in example-parent-tree-node [:children 1 :sem :val])))
+  (is (= (:cur-var (sem-for-next example-parent-tree-node1)) :v1))
+  (is (= (:val (sem-for-next example-parent-tree-node1))
+         (get-in example-parent-tree-node1 [:children 1 :sem :val])))
   (let [next (sem-for-next tree-node-with-lambda)]
     (is (= (:lambda next) nil))
     (is (= (-> next :val :v0) ["stuff", ["a_verb" :v0 :v4]]))
@@ -632,7 +637,11 @@
                 {:op-type :call-lambda, :arg-idx 0, :target-idx 2}]])
          (set (map :sem (get-in compiled-pcfg-test-sems-features ["$VP" :productions])))))
   (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1}]
-         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions]))))))
+         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions])))))
+  (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.01" :sem])
+         {:lambda {:form [nil nil], :remaining-idxs [1]}, :val "walk.v.01"}))
+  (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.02" :sem])
+         {:lambda {:form [nil nil nil], :remaining-idxs [1 2]} :val "walk.v.02"})))
 
 (deftest test-parse-with-sems
   (is (=
@@ -646,7 +655,7 @@
   (is (=
         {:v0 #{"person.n.01" [:v1 :v0 :v2]}
          :v1 #{"walk.v.02" [:v1 :v0 :v2]}
-         :v2 #{["face.n.01" [:v1 :v0 :v2]]}}
+         :v2 #{"face.n.01" [:v1 :v0 :v2]}}
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
@@ -655,7 +664,7 @@
   (is (=
         {:v0 #{"person.n.01" [:v1 :v0 :v2]}
          :v1 #{"chase.v.01" [:v1 :v0 :v2]}
-         :v2 #{["face.n.01" "person.n.01" [:v1 :v0 :v2]]}}
+         :v2 #{"face.n.01" "person.n.01" [:v1 :v0 :v2]}}
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features

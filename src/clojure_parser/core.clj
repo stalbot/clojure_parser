@@ -208,18 +208,33 @@
 
 (defn make-syn-production
   [[syn-name count]]
-  {:elements [syn-name] :count count})
+  {:elements [syn-name], :count count})
 
-(defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
+(defn maybe-add-sym-sem [pcfg features syn-name pos]
+  (if (or (not= pos "$V") (get-in pcfg [syn-name :sem]))
+    pcfg
+    (assoc-in
+      pcfg
+      [syn-name :sem]
+      {:lambda (if (get features "trans")
+                 {:form [nil nil nil], :remaining-idxs [1 2]}
+                 {:form [nil nil], :remaining-idxs [1]})
+       :val syn-name}
+      ))
+  )
+
+(defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name pos]
    (reduce
      (fn [lexicalizing-pcfg lemma-entry]
        (let [surface-word (:name lemma-entry)
-             lemma-entry-name (make-lem-pcfg-name syn-name surface-word)]
+             lemma-entry-name (make-lem-pcfg-name syn-name surface-word)
+             features (get lemma-entry :features {})]
          (->
            lexicalizing-pcfg
            (assoc-in
              [lemma-entry-name :features]
-             (get lemma-entry :features {}))
+             features)
+           (maybe-add-sym-sem features syn-name pos)
            (assoc-in
              [lemma-entry-name :word]
              surface-word))))
@@ -227,7 +242,7 @@
      (get-in lexicon [syn-name :lemmas])))
 
 (defn add-word-leaves
-  [lexicalizing-pcfg lexicon syns-to-totals]
+  [lexicalizing-pcfg lexicon syns-to-totals pos]
   (reduce-kv
     (fn [lexicalizing-pcfg syn-name total]
       (->
@@ -241,7 +256,7 @@
                                         (:name lemma-entry))]
                   :count (:count lemma-entry)})
                (get-in lexicon [syn-name :lemmas])))
-        (add-leaves-as-nodes lexicon syn-name)
+        (add-leaves-as-nodes lexicon syn-name pos)
         ))
     lexicalizing-pcfg
     syns-to-totals
@@ -264,7 +279,7 @@
               (assoc-in
                 [pos-for-sym :productions]
                 (map make-syn-production without-total))
-              (add-word-leaves lexicon without-total)
+              (add-word-leaves lexicon without-total pos-for-sym)
               )
           )
         )
@@ -296,31 +311,6 @@
     #(assoc %1 :children %2)
     tree))
 
-(defn lambda-args [sem]
-  (keep-indexed
-    #(if (and (string? %2) (-> %2 first (= \@))) %1)
-    (:val sem)))
-
-(def var-unifiers #{:and})
-
-(declare extract-attributes)
-
-(defn extract-attributes-helper [node]
-  (let [full-sem (:sem node)
-        sem-val (:val full-sem)
-        lambda-args (lambda-args full-sem)]
-    (cond
-      (not (empty? lambda-args))
-        ; minus 2 because 1 for the 0-indexing, one for skipping the lambda
-        #{[(first sem-val) (nth lambda-args (- (count (:children node)) 2))]}
-      (-> full-sem first var-unifiers)
-        (reduce into extract-attributes (:children node))
-      :else
-        #{(if (coll? sem-val) (first sem-val) sem-val)}
-      )))
-
-(def extract-attributes (memoize extract-attributes-helper))
-
 (defn with-new-sem-var [sem]
   (let [sem (or sem {:val {}})
         new-var (keyword (str "v" (count (:val sem))))]
@@ -338,7 +328,7 @@
     (fn [next-sem var]
       (update-in next-sem [:val var] #(conj %1 lamdbda-form)))
     next-sem
-    (rest lamdbda-form)))
+    lamdbda-form))
 
 (defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
   (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
@@ -354,7 +344,7 @@
   ; TODO: consider making these symbols the same as arg-map below
   (let [arg-idx (:arg-idx op)
         lambda-idx (:target-idx op)
-        lambda (get-in cur-node [:children arg-idx :sem :lambda])]
+        lambda (-> cur-node :children (nth arg-idx) :sem :lambda)]
     (resolve-lambda next-sem lambda lambda-idx (:cur-var next-sem))))
 
 (defn complete-condition [next-sem cur-node operation]
@@ -387,7 +377,7 @@
   "Given a node with zero or more children, get the sem for the next
    (or first) child. Look up the relevant sematic entries and complete
    any conditions, lambdas, or arg passing that needs to happen."
-  (let [children (:children cur-node)
+  (let [children (into [] (:children cur-node))
         next-index (count children)
         cur-sem (:sem cur-node)
         operation (pcfg-node-opts-for-child cur-node next-index)
@@ -400,9 +390,7 @@
       :call-lambda (call-lambda next-sem cur-node operation)
       :pass-arg (assoc next-sem
                   :cur-arg
-                  (get-in
-                    cur-node
-                    [:children (:arg-idx operation) :sem :cur-var]))
+                  (get-in children [(:arg-idx operation) :sem :cur-var]))
       :complete-condition (complete-condition next-sem cur-node operation)
       next-sem ; default case
       )))
@@ -412,16 +400,23 @@
    entry we've created up to the parent."
   (let [final-child-sem (-> parent-node :children last :sem)
         parent-sem (:sem parent-node)
+        new-parent-sem (if parent-sem
+                         (assoc parent-sem
+                           ; TODO: this needs more thought: is this just everything?
+                           ; (and if so, then why not just copy the child sem fully, minus inheritance)
+                           :lambda (:lambda final-child-sem)
+                           :val (:val final-child-sem)
+                           :cur-arg (:cur-arg final-child-sem))
+                          final-child-sem)
         operation (pcfg-node-opts-for-child
                     parent-node
                     (- (count (:children parent-node)) 1))
-        cur-var (if (:inherit-var operation) (:cur-var final-child-sem))]
-    (if (and parent-sem cur-var)
-      (assoc parent-sem
-        :val (:val final-child-sem)
-        :cur-arg (:cur-arg final-child-sem)
-        :cur-var cur-var)
-      (with-new-sem-var final-child-sem))))
+        cur-var (if (:inherit-var operation)
+                  (:cur-var final-child-sem)
+                  (:cur-var parent-sem))]
+    (if cur-var
+      (assoc new-parent-sem :cur-var cur-var)
+      (with-new-sem-var new-parent-sem))))
 
 (defn append-and-go-to-child
   [current-state child]
@@ -566,9 +561,10 @@
                         (get-in pcfg
                           [(:label current-state) :isolate_features]))
                  nil)
+        ; TODO: this is jank. fake the sem on the first pass, rely
+        ; on a later step to clean up
         parent-sem (if (-> current-state :sem nil?)
-                     {:val {:v0 #{parent-sym}}, :cur-var :v0}
-                     (sem-for-parent parent))]
+                     {:val {:v0 #{parent-sym}}, :cur-var :v0})]
     (assoc parent :sem parent-sem)))
 
 (defn create-first-states
@@ -668,14 +664,17 @@
    instatiating a new truth condition."
   (let [entry-sem (or (:sem synset-entry) {:val syn-name})
         entry-lambda (:lambda entry-sem)
-        node-sem (:sem node)]
-    (if entry-lambda
-      (resolve-lambda node-sem entry-lambda 0 (:cur-arg node-sem))
-      (update-in
-        node-sem
-        [:val (:cur-var node-sem)]
-        #(conj %1 (:val entry-sem)))
-      )))
+        node-sem (:sem node)
+        entry-lambda (if entry-lambda
+                       (assoc-in entry-lambda [:form 0] (:cur-var node-sem)))
+        cur-arg (:cur-arg node-sem)
+        node-sem (if (and cur-arg entry-lambda)
+                   (resolve-lambda node-sem entry-lambda 1 cur-arg)
+                   node-sem)]
+    (update-in
+      node-sem
+      [:val (:cur-var node-sem)]
+      #(conj %1 (:val entry-sem)))))
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
