@@ -560,17 +560,16 @@
     {:cur-var :v1}))
 
 (def tree-node-with-lambda
-  (tree-node
-    "el1"
-    {:sem [{} {} {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]}
-    [{:sem {:cur-var :v3}}
-     {:sem {:val {:v0 ["stuff"], :v1 [], :v2 [], :v3 []},
-            :cur-var :v3,
-            :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
-    {}
-    {:cur-var :v3}))
-(def tree-node-with-lambda
-  (assoc tree-node-with-lambda :sem (sem-for-parent tree-node-with-lambda)))
+  (let [tmp (tree-node
+              "el1"
+              {:sem [{} {} {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]}
+              [{:sem {:cur-var :v3}}
+               {:sem {:val {:v0 ["stuff"], :v1 [], :v2 [], :v3 []},
+                      :cur-var :v3,
+                      :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
+              {}
+              {:cur-var :v3})]
+  (assoc tmp :sem (sem-for-parent tmp))))
 
 (deftest test-sem-for-parent
   (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
