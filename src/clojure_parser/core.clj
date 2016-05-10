@@ -658,9 +658,10 @@
   (first (filter #(= first-sym (-> %1 :elements first :label))
                  (:productions pcfg-entry))))
 
-(defn sem-for-lemma-node [node syn-name synset-entry]
+(defn sem-for-syn-node [node syn-name synset-entry]
   "Given the node that will have this lemma with syn-name and associated
-   syn-entry as a child, return the updated semantic record. This means
+   syn-entry as a child, return the updated semantic record and the
+   probability adjustment associated with the new additions. This means
    instatiating a new truth condition."
   (let [entry-sem (or (:sem synset-entry) {:val syn-name})
         entry-lambda (:lambda entry-sem)
@@ -671,10 +672,12 @@
         node-sem (if (and cur-arg entry-lambda)
                    (resolve-lambda node-sem entry-lambda 1 cur-arg)
                    node-sem)]
-    (update-in
-      node-sem
-      [:val (:cur-var node-sem)]
-      #(conj %1 (:val entry-sem)))))
+    [(update-in
+       node-sem
+       [:val (:cur-var node-sem)]
+       #(conj %1 (:val entry-sem))),
+     1.0]  ; TODO: obviously make this a real probability
+    ))
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
@@ -693,7 +696,10 @@
             (fn [new-states-and-probs [syn-name synset-entry]]
               (let [merged-features (merge (:features synset-entry)
                                            (:features word-entry))
-                    syn-production (find-production synset-entry lem-name)]
+                    syn-production (find-production synset-entry lem-name)
+                    [syn-sem sem-prob-adj] (sem-for-syn-node (zp/node state)
+                                                             syn-name
+                                                             synset-entry)]
                 (assoc new-states-and-probs
                   (->
                     state
@@ -706,9 +712,7 @@
                         syn-production
                         []
                         merged-features
-                        (sem-for-lemma-node (zp/node state)
-                                            syn-name
-                                            synset-entry)))
+                        syn-sem))
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
@@ -722,6 +726,7 @@
                                          merged-features)
                        1.0
                        0.0)
+                     sem-prob-adj
                      adjust-prob)
                   )
                 ))
