@@ -16,6 +16,7 @@
    "v" "$V"
    ; "s" "$A" TODO: make sym-to-pos-lkup machinery handle multiple
    "r" "$R"
+   "c" "$C"
    })
 
 (defn productions-key
@@ -65,19 +66,39 @@
 ; ensure we aren't duplicating this same structure all over the place in mem
 (def simple-inherit-var {:inherit-var true})
 
+(defn update-ops-for-complete-condition
+  [operations local-condition called-args-idxs]
+  (update
+    operations
+    (last called-args-idxs)
+    #(assoc %1
+      :op-type :complete-condition
+      :form (into [local-condition]
+                  (repeat (count called-args-idxs) nil))
+      :arg-map (into {}
+                     (map-indexed (fn [i j] [j (+ i 1)])
+                                  called-args-idxs)))))
+
 (defn compile-prod-sem [production]
   (let [raw-sem (or (:sem production) ["&0"])
         operations (into [] (repeat (count (:elements production)) {}))
         with-inherit (map s-idx (filter #(re-find #"\&" %1) raw-sem))
+        local-condition (if (not (re-matches #"\W+\d+" (first raw-sem)))
+                          (first raw-sem))
         operations (reduce
                      #(assoc %1 %2 simple-inherit-var)
                      operations
                      with-inherit)
         called (if (re-find #"\#" (first raw-sem)) (s-idx (first raw-sem)))
-        called-args-idxs (if called
-                           (keep-indexed
-                            #(if (re-find #"\%" %2) [(s-idx %2) %1])
-                            raw-sem))]
+        called-args-idxs (keep-indexed
+                          #(if (re-find #"\%" %2) [(s-idx %2) %1])
+                          raw-sem)
+        operations (if local-condition
+                     (update-ops-for-complete-condition
+                       operations
+                       local-condition
+                       called-args-idxs)
+                     operations)]
     (reduce
       ; TODO: this NEEDS to be able to handle more than 1 of each kind!
       ; TODO: this needs to actually do something with the @ args!
@@ -99,7 +120,8 @@
               :target-idx form-idx))
           ))
       operations
-      called-args-idxs)))
+      ; don't do this if we aren't actually calling a lambda
+      (if called called-args-idxs))))
 
 (defn reformat-production [production]
   (assoc production
@@ -210,18 +232,35 @@
   [[syn-name count]]
   {:elements [syn-name], :count count})
 
+(defn syn-sem-from-pcfg-entry [raw-sem syn-name]
+  (if (nil? raw-sem)
+    {:val syn-name}
+    ; TODO: this probably needs to be more general other than just lambdas
+    {:lambda {:form (into [] (repeat (count raw-sem) nil))
+              :remaining-idxs (keep-indexed
+                                #(if (not (re-find #"\#" %2)) %1)
+                                raw-sem)
+              :target-idx (first (keep-indexed #(if (re-find #"\#" %2) %1)
+                                               raw-sem))}
+     :val syn-name}
+    ))
+
 (defn maybe-add-sym-sem [pcfg features syn-name pos]
-  (if (or (not= pos "$V") (get-in pcfg [syn-name :sem]))
+  (if (get-in pcfg [syn-name :sem])
+    ; don't need to do anything if already have :sem
     pcfg
-    (assoc-in
-      pcfg
-      [syn-name :sem]
-      {:lambda (if (get features "trans")
-                 {:form [nil nil nil], :remaining-idxs [1 2]}
-                 {:form [nil nil], :remaining-idxs [1]})
-       :val syn-name}
-      ))
-  )
+    (loop [sem-mapper (get-in pcfg [:meta :sem-mapper pos])]
+      (if (map? sem-mapper)
+        (recur (get-in
+                 sem-mapper
+                 [:vals (get features (:key sem-mapper))]
+                 (get-in sem-mapper [:vals nil])))
+        (assoc-in
+          pcfg
+          [syn-name :sem]
+          (syn-sem-from-pcfg-entry sem-mapper syn-name)
+          )
+        ))))
 
 (defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name pos]
    (reduce
@@ -564,8 +603,19 @@
         ; TODO: this is jank. fake the sem on the first pass, rely
         ; on a later step to clean up
         parent-sem (if (-> current-state :sem nil?)
-                     {:val {:v0 #{parent-sym}}, :cur-var :v0})]
-    (assoc parent :sem parent-sem)))
+                     {:val {:v0 #{parent-sym}}})]
+    (assoc parent :sem parent-sem))
+  (tree-node
+    parent-sym
+    production
+    [current-state]
+    (apply dissoc
+           (:features current-state)
+           (get-in pcfg
+                   [(:label current-state) :isolate_features]))
+    (if (and (-> current-state :sem nil?)
+             (get-in production [:sem 0 :inherit-var]))
+      {:val {:v0 #{parent-sym}}, :cur-var :v0})))
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
@@ -667,7 +717,9 @@
         entry-lambda (:lambda entry-sem)
         node-sem (:sem node)
         entry-lambda (if entry-lambda
-                       (assoc-in entry-lambda [:form 0] (:cur-var node-sem)))
+                       (assoc-in entry-lambda
+                                 [:form (get entry-lambda :target-idx 0)]
+                                 (:cur-var node-sem)))
         cur-arg (:cur-arg node-sem)
         node-sem (if (and cur-arg entry-lambda)
                    (resolve-lambda node-sem entry-lambda 1 cur-arg)

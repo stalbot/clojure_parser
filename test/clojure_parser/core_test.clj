@@ -595,7 +595,10 @@
    "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :sem ["#&1" "%0"]}]
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3, :sem ["&0" "&1"]}
-                        {:elements ["$N"], :count 0.7}]}
+                        {:elements ["$N"], :count 0.6}
+                        {:elements ["$NP" "$C" "$NP"],
+                         :count 0.1,
+                         :sem ["&#1" "%0" "%2"]}]}
    "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
                          :count 0.4,
                          :sem ["#&0" "@0" "%1"],
@@ -603,6 +606,9 @@
                         {:elements [["$V" {"trans" false}]],
                          :sem ["&#0" "@0"]
                          :count 0.6}]}
+   :meta {:sem-mapper {"$V" {:key "trans", :vals {true ["#&0" "@0" "%1"],
+                                                  nil ["&#0" "@0"]}},
+                       "$C" ["&#1" "%0" "%2"]}}
    })
 
 (def lexicon-for-testing-features-and-sems-in-prods
@@ -612,10 +618,15 @@
                                   {:name "faces", :count 1, :features {"plural" true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
    "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
-   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
-   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
+   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1,
+                                   :features {"trans" false, "plural" true}}]}
+   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1,
+                                   :features {"trans" true, "plural" true}}]}
    "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
-   "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
+   "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
+   "or.c.01" {:pos "c" :lemmas [{:name "or" :count 1}]}
+   "and.c.01" {:pos "c" :lemmas [{:name "and" :count 1}]}
+   })
 
 (def compiled-lex-test-sems-features
   (make-lexical-lkup lexicon-for-testing-features-and-sems-in-prods))
@@ -629,7 +640,11 @@
   (-> parse last first first :sem :val))
 
 (deftest test-pcfg-sem-formatting
-  (is (= (set [[{:inherit-var true}] [{:inherit-var true} {:inherit-var true}]])
+  (is (= (set [[{:inherit-var true}]
+               [{:inherit-var true} {:inherit-var true}]
+               [{}
+                {:op-type :pass-arg, :inherit-var true, :arg-idx 0, :target-idx 1}
+                {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]])
          (set (map :sem (get-in compiled-pcfg-test-sems-features ["$NP" :productions])))))
   (is (= (set [[{:inherit-var true}]
                [{:inherit-var true}
@@ -638,9 +653,15 @@
   (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1}]
          (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions])))))
   (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.01" :sem])
-         {:lambda {:form [nil nil], :remaining-idxs [1]}, :val "walk.v.01"}))
+         {:lambda {:form [nil nil], :remaining-idxs [1], :target-idx 0},
+          :val "walk.v.01"}))
   (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.02" :sem])
-         {:lambda {:form [nil nil nil], :remaining-idxs [1 2]} :val "walk.v.02"})))
+         {:lambda {:form [nil nil nil], :remaining-idxs [1 2], :target-idx 0},
+          :val "walk.v.02"}))
+  (is (= (get-in compiled-pcfg-test-sems-features ["or.c.01" :sem])
+         {:lambda {:form [nil nil nil], :remaining-idxs [1 2], :target-idx 0},
+          :val "or.c.01"}))
+  )
 
 (deftest test-parse-with-sems
   (is (=
@@ -669,6 +690,16 @@
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("person" "chase" "person" "face")))))
+  (is (=
+        {:v0 #{[:v1 :v0 :v2] "cool.n.01"},
+         :v1 #{"or.c.01" [:v3 :v1] [:v1 :v0 :v2]},
+         :v2 #{"person.n.01" [:v1 :v0 :v2]},
+         :v3 #{[:v3 :v1] "walk.v.01"}}
+        (extract-first-sem-vals-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("cool" "or" "person" "walk")))))
   )
 
 (def lexicon-with-sem-net
