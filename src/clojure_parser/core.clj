@@ -912,7 +912,7 @@
         (map (fn [[k v]] [k (* v prior-prob)]))
         states-with-probs))
     (priority-map-gt)
-    (map
+    (pmap
       (fn [[state, prob]] [(infer-possible-states pcfg state) prob])
       current-states))
   )
