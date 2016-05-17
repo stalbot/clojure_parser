@@ -287,6 +287,7 @@
       (->
         lexicalizing-pcfg
         (assoc-in [syn-name :productions_total] total)
+        (assoc-in [syn-name :features] (get-in lexicon [syn-name :features]))
         (assoc-in
           [syn-name :productions]
           (map (fn [lemma-entry]

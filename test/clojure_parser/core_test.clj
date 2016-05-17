@@ -491,7 +491,7 @@
    "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
                                   {:name "faces", :count 1, :features {"plural" true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
-   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
+   "chase.v.01" {:pos "v", :features {"trans" true}, :lemmas [{:name "chase", :count 1}]}
    "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
    "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
    "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {"plural" true}}]}
@@ -510,6 +510,8 @@
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 0 :features])))
   (is (= {"trans" false}
          (get-in compiled-prod-pcfg ["$VP" :productions 1 :elements 0 :features])))
+  (is (= {"trans" true}
+         (get-in compiled-prod-pcfg ["chase.v.01" :features])))
   (is (= {}
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features])))
   )
@@ -520,8 +522,8 @@
                     compiled-lex-for-features-in-prods
                     '("person" "chase" "face"))]
     (is (= 1 (count parses)))
-    (is (= {"trans" true}
-           (-> parses first first :children last :children first :children first :features)))
+    (is (= {"trans" true, "plural" false}
+           (-> parses first first :children last :children first :features)))
     ))
 
 (deftest test-no-parse-when-blocked-by-features
@@ -529,8 +531,13 @@
                      compiled-prod-pcfg
                      compiled-lex-for-features-in-prods
                      '("person" "talk" "face"))]
-    (is (= 0 (count parses)))
-    ))
+    (is (= 0 (count parses))))
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("person" "chase"))]
+    (is (= 0 (count parses))))
+  )
 
 (deftest test-nil-features-wont-block-parse
   (let [[_ parses] (parse-and-learn-sentence
