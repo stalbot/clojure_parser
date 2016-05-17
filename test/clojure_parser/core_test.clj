@@ -486,7 +486,7 @@
    })
 
 (def lexicon-for-testing-features-in-prods
-  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
+  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5, :features {"plural" false}}
                                     {:name "individual", :count 2}]}
    "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
                                   {:name "faces", :count 1, :features {"plural" true}}]}
@@ -494,7 +494,7 @@
    "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
    "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
    "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
-   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {"plural" true}}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
 
 (def compiled-lex-for-features-in-prods
@@ -530,6 +530,20 @@
                      compiled-lex-for-features-in-prods
                      '("person" "talk" "face"))]
     (is (= 0 (count parses)))
+    ))
+
+(deftest test-nil-features-wont-block-parse
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("cool" "talk"))]
+    (is (= 1 (count parses)))
+    )
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("person" "face"))]
+    (is (= 1 (count parses)))
     ))
 
 (deftest test-feature-causes-correct-synset-choice

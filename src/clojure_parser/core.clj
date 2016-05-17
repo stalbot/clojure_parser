@@ -387,7 +387,7 @@
     (resolve-lambda next-sem lambda lambda-idx (:cur-var next-sem))))
 
 (defn complete-condition [next-sem cur-node operation]
-  ; TODO: there's nothing in PCFG compilation that would trigger this!
+  ; TODO: this isn't really tested, not sure it's needed
   ; aka it's probably broken ;(
   (let [form (:form operation)
         arg-map (:arg-map operation)
@@ -700,7 +700,11 @@
 
 (defn features-match
   [features1 features2]
-  (every? (fn [[k v]] (= (get features2 k) v)) features1)
+  (every?
+    (fn [[k v]] (or (nil? v)
+                    (let [val (get features2 k)]
+                      (or (nil? val) (= val v)))))
+    features1)
   )
 
 ; TODO: optimize when more efficient :parents structure
