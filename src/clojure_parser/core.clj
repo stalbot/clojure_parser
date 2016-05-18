@@ -738,6 +738,10 @@
 
 (defn update-state-probs-for-lemma
   [pcfg states-and-probs lem-name adjust-prob]
+  "Given one possible lemma for a word (e.g. walk.v.03 for 'walk') and
+   a set of states, give back the set of states with updated info for
+   the probability, with the newly attached info from the lemma/synset,
+   and any relevant semantic information."
   ; TODO: not amazing, this trick relies on the knowledge that
   ; synset nodes have only one parent
   (let [word-entry (get pcfg lem-name)
@@ -746,8 +750,8 @@
         word-parent-info (group-by
                            #(-> %1 last :parents keys first first)
                            parent-entries)]
-    (reduce-kv
-      (fn [new-states-and-probs state prob]
+    (reduce
+      (fn [new-states-and-probs [state prob]]
         (let [cur-label (-> state zp/node :label)]
           (reduce
             (fn [new-states-and-probs [syn-name synset-entry]]
@@ -910,16 +914,20 @@
 
 (defn infer-possible-states-mult
   [pcfg current-states]
-  (reduce
-    (fn [final-states [states-with-probs, prior-prob]]
-      (into
-        final-states
-        (map (fn [[k v]] [k (* v prior-prob)]))
-        states-with-probs))
-    (priority-map-gt)
-    (pmap
-      (fn [[state, prob]] [(infer-possible-states pcfg state) prob])
-      current-states))
+  (->>
+    (reduce
+      (fn [final-states [states-with-probs, prior-prob]]
+        (into
+          final-states
+          (map (fn [[k v]] [k (* v prior-prob)]))
+          states-with-probs))
+      '()
+      (pmap
+        (fn [[state, prob]] [(infer-possible-states pcfg state) prob])
+        current-states))
+    (sort-by last)
+    reverse
+    (take (max-states)))
   )
 
 (defn parse-and-learn-sentence
