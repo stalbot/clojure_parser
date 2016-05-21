@@ -1,6 +1,6 @@
 (ns clojure-parser.core
   (:require [clojure.data.priority-map :refer [priority-map-by]]
-            ; [clojure.data.json :as json]
+            [clojure.data.json :as json]
             [clojure.zip :as zp]))
 
 (defmacro start-sym [] "$S")
@@ -18,6 +18,25 @@
    "r" "$R"
    "c" "$C"
    })
+
+(defn merge-with! [f m1 m2]
+  (reduce-kv
+    (fn [m1 k v]
+      (assoc!
+        m1
+        k
+        ; contains? is broken in transients
+        (let [val (get m1 k :__merge_with!_dne)]
+          (if (= val :__merge_with!_dne)
+            v
+            (f v val)))))
+    m1
+    m2))
+
+(defn parse-raw-json-data [json-str]
+  (json/read-str
+    json-str
+    :key-fn #(if (re-matches #"(?:\$.*|\w+\.\w.\d+)" %1) %1 (keyword %1))))
 
 (defn productions-key
   "Find the right index in the list of productions to update
@@ -253,8 +272,9 @@
       (if (map? sem-mapper)
         (recur (get-in
                  sem-mapper
-                 [:vals (get features (:key sem-mapper))]
-                 (get-in sem-mapper [:vals nil])))
+                 [:vals (keyword
+                          (str (get features (keyword (:key sem-mapper)))))]
+                 (get-in sem-mapper [:vals :nil])))
         (assoc-in
           pcfg
           [syn-name :sem]
@@ -535,16 +555,17 @@
   )
 
 (defn renormalize-found-states
-  [pri-map-trans]
-  (let [total (apply + (vals pri-map-trans))]
-    (reduce-kv
-      (fn [pri-map-trans state prob]
+  [found-states]
+  (let [found-states (persistent! found-states)
+        total (reduce + (map last found-states))]
+    (reduce
+      (fn [sorted-states [state prob]]
         (if (== prob 0.0)
-          pri-map-trans
-          (assoc pri-map-trans state (/ prob total))
+          sorted-states
+          (assoc sorted-states state (/ prob total))
           ))
       (priority-map-gt)
-      pri-map-trans
+      found-states
       )))
 
 (defn infer-possible-states
@@ -557,7 +578,7 @@
   [pcfg current-state]
   (renormalize-found-states
     (loop [frontier (priority-map-gt (zp/up current-state) 1.0)
-           found (priority-map-gt)
+           found (transient [])
            best-prob nil]
       (if (or (>= (count found) (max-states))
               (empty? frontier))
@@ -571,7 +592,7 @@
               found
               (recur
                 remainder
-                (assoc found current-state current-prob)
+                (conj! found [current-state current-prob])
                 (or best-prob current-prob)))
             (recur
               (into remainder
@@ -634,7 +655,8 @@
   all of our states point to the top and aren't zipped, so this method zips
   the state and traverses down the zipped state to the bottom left corner"
   [found-states]
-  (let [total (reduce + (vals found-states))]
+  (let [found-states (persistent! found-states)
+        total (reduce + (map last found-states))]
     (into
       (priority-map-gt)
       (map
@@ -668,7 +690,7 @@
   [pcfg lexical-lkup first-word]
   (finalize-initial-states
     (loop [frontier (create-first-states pcfg lexical-lkup first-word)
-           found (priority-map-gt)]
+           found (transient [])]
       (let [[current-state current-prob] (peek frontier)
             [frontier found]
             (reduce-kv
@@ -678,10 +700,10 @@
                   (if (or (= parent-sym (start-sym))
                           (< (* prob current-prob) (min-prob-ratio)))
                     [frontier
-                     (assoc
+                     (conj!
                        found
-                       (make-next-initial-state pcfg current-state parent-sym prod)
-                       (* prob current-prob))
+                       [(make-next-initial-state pcfg current-state parent-sym prod)
+                        (* prob current-prob)])
                      ]
                     [(assoc
                        frontier
@@ -761,7 +783,7 @@
                     [syn-sem sem-prob-adj] (sem-for-syn-node (zp/node state)
                                                              syn-name
                                                              synset-entry)]
-                (assoc new-states-and-probs
+                (assoc! new-states-and-probs
                   (->
                     state
                     (zp/edit assoc :production (find-production
@@ -793,7 +815,7 @@
                 ))
             new-states-and-probs
             (get word-parent-info cur-label))))
-      (priority-map-gt)
+      (transient {})
       states-and-probs
       )
     ))
@@ -809,7 +831,7 @@
               states-and-probs
               lem-name
               prob)))
-       (reduce #(merge-with + %1 %2))
+       (reduce #(merge-with! + %1 (persistent! %2)) (transient {}))
        renormalize-found-states)
   )
 
@@ -850,9 +872,9 @@
     (reduce-kv
       (fn [new-states-and-probs state prob]
         (if (tree-is-filled state)
-          (assoc new-states-and-probs (add-sems-at-eos pcfg state) prob)
+          (conj! new-states-and-probs [(add-sems-at-eos pcfg state) prob])
           new-states-and-probs))
-      (priority-map-gt)
+      (transient [])
       states-and-probs
       )))
 
@@ -927,6 +949,7 @@
         current-states))
     (sort-by last)
     reverse
+    ; TODO: consider tuning this number
     (take (max-states)))
   )
 

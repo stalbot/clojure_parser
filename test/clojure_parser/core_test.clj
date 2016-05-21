@@ -2,6 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer :all]
             [clojure.zip :as zp]
+            [clojure.data.json :as json]
             [clojure.data :refer [diff]]
             ))
 
@@ -479,22 +480,22 @@
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3}
                         {:elements ["$N"], :count 0.7}]}
-   "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
+   "$VP" {:productions [{:elements [["$V" {:trans true}] "$NP"],
                          :count 0.4,
                          :head 0}
-                        {:elements [["$V" {"trans" false}]], :count 0.6}]}
+                        {:elements [["$V" {:trans false}]], :count 0.6}]}
    })
 
 (def lexicon-for-testing-features-in-prods
-  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5, :features {"plural" false}}
+  {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5, :features {:plural false}}
                                     {:name "individual", :count 2}]}
-   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
-                                  {:name "faces", :count 1, :features {"plural" true}}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {:plural false}}
+                                  {:name "faces", :count 1, :features {:plural true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
-   "chase.v.01" {:pos "v", :features {"trans" true}, :lemmas [{:name "chase", :count 1}]}
-   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" false}}]}
-   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {"trans" true}}]}
-   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {"plural" true}}]}
+   "chase.v.01" {:pos "v", :features {:trans true}, :lemmas [{:name "chase", :count 1}]}
+   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {:trans false}}]}
+   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {:trans true}}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {:plural true}}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
 
 (def compiled-lex-for-features-in-prods
@@ -506,11 +507,11 @@
                             lexicon-for-testing-features-in-prods)))
 
 (deftest pcfg-with-prods-proper-format
-  (is (= {"trans" true}
+  (is (= {:trans true}
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 0 :features])))
-  (is (= {"trans" false}
+  (is (= {:trans false}
          (get-in compiled-prod-pcfg ["$VP" :productions 1 :elements 0 :features])))
-  (is (= {"trans" true}
+  (is (= {:trans true}
          (get-in compiled-prod-pcfg ["chase.v.01" :features])))
   (is (= {}
          (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features])))
@@ -522,7 +523,7 @@
                     compiled-lex-for-features-in-prods
                     '("person" "chase" "face"))]
     (is (= 1 (count parses)))
-    (is (= {"trans" true, "plural" false}
+    (is (= {:trans true, :plural false}
            (-> parses first first :children last :children first :features)))
     ))
 
@@ -620,29 +621,29 @@
                         {:elements ["$NP" "$C" "$NP"],
                          :count 0.1,
                          :sem ["&#1" "%0" "%2"]}]}
-   "$VP" {:productions [{:elements [["$V" {"trans" true}] "$NP"],
+   "$VP" {:productions [{:elements [["$V" {:trans true}] "$NP"],
                          :count 0.4,
                          :sem ["#&0" "@0" "%1"],
                          :head 0}
-                        {:elements [["$V" {"trans" false}]],
+                        {:elements [["$V" {:trans false}]],
                          :sem ["&#0" "@0"]
                          :count 0.6}]}
-   :meta {:sem-mapper {"$V" {:key "trans", :vals {true ["#&0" "@0" "%1"],
-                                                  nil ["&#0" "@0"]}},
+   :meta {:sem-mapper {"$V" {:key "trans", :vals {:true ["#&0" "@0" "%1"],
+                                                  :nil ["&#0" "@0"]}},
                        "$C" ["&#1" "%0" "%2"]}}
    })
 
 (def lexicon-for-testing-features-and-sems-in-prods
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
                                     {:name "individual", :count 2}]}
-   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
-                                  {:name "faces", :count 1, :features {"plural" true}}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {:plural false}}
+                                  {:name "faces", :count 1, :features {:plural true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
-   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {"trans" true}}]}
+   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {:trans true}}]}
    "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1,
-                                   :features {"trans" false, "plural" true}}]}
+                                   :features {:trans false, :plural true}}]}
    "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1,
-                                   :features {"trans" true, "plural" true}}]}
+                                   :features {:trans true, :plural true}}]}
    "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
    "or.c.01" {:pos "c" :lemmas [{:name "or" :count 1}]}
@@ -743,3 +744,15 @@
          (sort (vals (get-in compiled-sem-net ["causal_agent.n.01" :hyponyms])))))
   )
 
+(deftest test-lex-json-parsing-not-lossy
+  (is (= (parse-raw-json-data
+           (json/write-str lexicon-for-testing-features-and-sems-in-prods))
+         lexicon-for-testing-features-and-sems-in-prods))
+  (is (= (parse-raw-json-data
+         (json/write-str lexicon-with-sem-net))
+         lexicon-with-sem-net)))
+
+(deftest test-pcfg-json-parsing-not-lossy
+  (is (= (parse-raw-json-data
+           (json/write-str pcfg-with-features-and-sems-in-prods))
+         pcfg-with-features-and-sems-in-prods)))
