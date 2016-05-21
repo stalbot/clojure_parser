@@ -350,8 +350,8 @@
   )
 
 ; these are going to be used in inner loops, so bind them in as macros
-(defmacro max-states [] 50)
 (defmacro min-prob-ratio [] 0.001)
+(defmacro default-beam-size [] 50)
 
 (defrecord TreeNode [label production children features sem])
 
@@ -575,12 +575,12 @@
    which shouldn't happen in practice). Assumes that the active state
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
-  [pcfg current-state]
+  [pcfg current-state beam-size]
   (renormalize-found-states
     (loop [frontier (priority-map-gt (zp/up current-state) 1.0)
            found (transient [])
            best-prob nil]
-      (if (or (>= (count found) (max-states))
+      (if (or (>= (count found) beam-size)
               (empty? frontier))
         found
         (let [[current-state current-prob] (peek frontier)
@@ -687,7 +687,7 @@
   "From a start word, builds all the initial states needed for the sentence
   parser. Stops at *max-states* or *min-prob-ratio*. Assumes `lexicon` is
   the result of a call to `make-lexical-lkup`"
-  [pcfg lexical-lkup first-word]
+  [pcfg lexical-lkup first-word beam-size]
   (finalize-initial-states
     (loop [frontier (create-first-states pcfg lexical-lkup first-word)
            found (transient [])]
@@ -695,7 +695,7 @@
             [frontier found]
             (reduce-kv
               (fn [[frontier found] [parent-sym prod] prob]
-                (if (>= (count found) (max-states))
+                (if (>= (count found) beam-size)
                   (reduced [frontier found])
                   (if (or (= parent-sym (start-sym))
                           (< (* prob current-prob) (min-prob-ratio)))
@@ -714,7 +714,7 @@
               [(pop frontier) found]
               (parents-with-normed-probs pcfg (:label current-state))
               )]
-        (if (or (>= (count found) (max-states)) (empty? frontier))
+        (if (or (>= (count found) beam-size) (empty? frontier))
           found
           (recur frontier found)
           ))
@@ -935,7 +935,7 @@
   )
 
 (defn infer-possible-states-mult
-  [pcfg current-states]
+  [pcfg current-states beam-size]
   (->>
     (reduce
       (fn [final-states [states-with-probs, prior-prob]]
@@ -945,20 +945,26 @@
           states-with-probs))
       '()
       (pmap
-        (fn [[state, prob]] [(infer-possible-states pcfg state) prob])
+        (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
+                             prob])
         current-states))
     (sort-by last)
     reverse
     ; TODO: consider tuning this number
-    (take (max-states)))
+    (take beam-size))
   )
 
 (defn parse-and-learn-sentence
+  ([pcfg lexical-lkup sentence beam-size]
+   (parse-and-learn-sentence pcfg lexical-lkup sentence beam-size true))
   ([pcfg lexical-lkup sentence]
-   (parse-and-learn-sentence pcfg lexical-lkup sentence true))
-  ([pcfg lexical-lkup sentence learn]
-  (let [starting-states
-        (infer-initial-possible-states pcfg lexical-lkup (first sentence))]
+   (parse-and-learn-sentence pcfg lexical-lkup sentence (default-beam-size) true))
+  ([pcfg lexical-lkup sentence beam-size learn]
+  (let [starting-states (infer-initial-possible-states
+                          pcfg
+                          lexical-lkup
+                          (first sentence)
+                          beam-size)]
     (loop [sentence (rest sentence)
            current-states starting-states]
       (if (empty? sentence)
@@ -971,7 +977,7 @@
         (recur
           (rest sentence)
           (let [next-possible-states
-                (infer-possible-states-mult pcfg current-states)]
+                (infer-possible-states-mult pcfg current-states beam-size)]
             (update-state-probs-for-word
               pcfg
               lexical-lkup

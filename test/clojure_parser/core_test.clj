@@ -154,21 +154,33 @@
 
 (def realistic-tnode
   (mk-traversable-tree
-    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs" [])])])])))
+    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs.n.01" [])])])])))
 
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
   ; when it hits min probability, etc.
   ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
-        learned (infer-possible-states compiled-pcfg-for-test child)]
+        learned (infer-possible-states compiled-pcfg-for-test child (default-beam-size))]
     (is (= (-> learned keys first plain-tree)
            (-> realistic-tnode
                zp/down
                (append-and-go-to-child (tree-node "$N" nil []))
                plain-tree)))
-    (is (approx= (first (vals learned)) 1.0))
-  ))
+    (is (approx= (first (vals learned)) 1.0)))
+  (let [child (-> realistic-tnode zp/down)
+        learned (infer-possible-states compiled-pcfg-for-test child 1)]
+    (is (= (-> learned keys first zp/root :children second :production :elements count)
+           1))  ; make sure we got the higher-probability $V production as the only one
+    (is (approx= (first (vals learned)) 1.0)))
+  (let [child (-> realistic-tnode zp/down)
+        learned (infer-possible-states compiled-pcfg-for-test child 2)]
+    (is (= (->> learned
+                keys
+                (map #(-> % zp/root :children second :production :elements count)))
+           [1 2]))
+    (is (= (vals learned) [0.6 0.4])))
+  )
 
 (def ambiguous-inferred-state1
   (let [raw (tree-node-tst
@@ -200,7 +212,8 @@
   (let [inferred (infer-initial-possible-states
                    compiled-pcfg-for-test
                    compiled-lexicon-for-test
-                   "face")]
+                   "face"
+                   (default-beam-size))]
     (is (= (count inferred) 2))
     (is (= (vals inferred) [0.7 0.3]))
     (is (= (->> inferred keys first zp/up zp/up zp/up zp/node :production :elements (map :label))
@@ -211,12 +224,22 @@
   (let [inferred (infer-initial-possible-states
                    compiled-pcfg-for-test
                    compiled-lexicon-for-test
-                   "cool")
+                   "cool"
+                   (default-beam-size))
         lex-label (map #(-> %1 zp/up zp/up zp/node :label) (keys inferred))]
     (is (= (count inferred) 3))
     (is (= lex-label ["$A" "$N" "$N"]))
     (is (approx= (reduce + (vals inferred)) 1.0))
     (is (approx= (first (vals inferred)) 0.571428571428571)))
+  (let [inferred (infer-initial-possible-states
+                   compiled-pcfg-for-test
+                   compiled-lexicon-for-test
+                   "cool"
+                   1)  ; checking appropriate limiting from this beam-size
+        lex-label (map #(-> %1 zp/up zp/up zp/node :label) (keys inferred))]
+    (is (= (count inferred) 1))
+    (is (= lex-label ["$A"]))
+    (is (approx= (reduce + (vals inferred)) 1.0)))
   )
 
 (def pre-state-1
