@@ -14,7 +14,7 @@
    "n" "$N"
    "a" "$A"
    "v" "$V"
-   ; "s" "$A" TODO: make sym-to-pos-lkup machinery handle multiple
+   "s" "$A"
    "r" "$R"
    "c" "$C"
    })
@@ -33,10 +33,48 @@
     m1
     m2))
 
+(defn merge! [m1 m2]
+  (reduce-kv assoc! m1 m2))
+
 (defn parse-raw-json-data [json-str]
   (json/read-str
     json-str
-    :key-fn #(if (re-matches #"(?:\$.*|\w+\.\w.\d+)" %1) %1 (keyword %1))))
+    :key-fn #(if (re-matches #"(?:\$.*|.*\.\w.\d+)" %1) %1 (keyword %1))))
+
+(defn format-raw-lex-data [lex-data]
+  (persistent!
+    (reduce-kv
+      (fn [lex-data syn-name data]
+        (assoc!
+          lex-data
+          syn-name
+          (assoc data
+            :lemmas
+            (->> data :lemmas vals (into []))))
+        )
+      (transient lex-data)
+      lex-data
+      )))
+
+(defn load-lex-from-wn-path [wordnet-path]
+  (let [dir (clojure.java.io/file wordnet-path)
+        top-level-dirs (.listFiles dir)]
+    (persistent!
+      (reduce
+        (fn [lexicon pos-dir]
+          (reduce
+            (fn [lexicon file]
+              (merge! lexicon (format-raw-lex-data
+                                (parse-raw-json-data (slurp file)))))
+            lexicon
+            (.listFiles (clojure.java.io/file pos-dir))
+            )
+          )
+        (transient {})
+        top-level-dirs))))
+
+(defn get-count [lem]
+  (or (:count lem) 0.5))
 
 (defn productions-key
   "Find the right index in the list of productions to update
@@ -144,7 +182,7 @@
 
 (defn reformat-production [production]
   (assoc production
-    :count (double (:count production))
+    :count (double (get-count production))
     :elements (mapv prod-el (:elements production))
     :sem (compile-prod-sem production))
   )
@@ -207,8 +245,9 @@
             (let [word (:name lem)]
               [word (make-lem-pcfg-name syn-name word)])
             (fn [old new] (+ (or old 0.0) new))
-            (:count lem)))
+            (get-count lem)))
         lkup
+        ; TODO: hm, this isn't great, two possible ways to specify format
         (:lemmas node)
         ))
     {}
@@ -219,7 +258,7 @@
   (reduce-kv
     (fn [lexical-categories syn-name info]
       (let [pos (:pos info)
-            total (reduce + (map :count (:lemmas info)))]
+            total (reduce + (map get-count (:lemmas info)))]
         (-> lexical-categories
             (assoc-in [pos syn-name] total)
             (update-in [pos :total] #(+ (or %1 0.0) total)))

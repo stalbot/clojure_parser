@@ -33,7 +33,7 @@
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
    "cool.a.01" {:pos "a" :lemmas [{:name "cool" :count 4}]}
    "new.a.01" {:pos "a" :lemmas [{:name "new", :count 2}
-                                 {:name "fresh" :count 1}]}
+                                 {:name "fresh"}]}
    "newly.r.01" {:pos "r" :lemmas [{:name "newly", :count 2}]}})
 
 (def compiled-lexicon-for-test
@@ -55,6 +55,7 @@
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
   (is (= (get-in compiled-lexicon-for-test ["face" "face.v.01.face"]) 2.0))
   (is (= (get-in compiled-lexicon-for-test ["face" "face.n.01.face"]) 3.0))
+  (is (> (get-in compiled-lexicon-for-test ["fresh" "new.a.01.fresh"]) 0.0))  ; default in nil case
   (is (= (get-in compiled-lexicon-for-test
                  ["individual" "person.n.01.individual"])
          2.0)))
@@ -89,6 +90,7 @@
          3.0))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents])
          {["face.n.01" 0] 3.0}))
+  ; TODO: test for default :count in pcfg, not just lexicon
   (is (= (get-in compiled-pcfg-for-test ["face" :lex-node]) nil))
   (is (approx= (:parents_total (get compiled-pcfg-for-test "$NP")) 4.0))
   ; TODO: resolve the parent problem
