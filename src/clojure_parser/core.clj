@@ -304,10 +304,8 @@
      :val syn-name}
     ))
 
-(defn maybe-add-sym-sem [pcfg features syn-name pos]
-  (if (get-in pcfg [syn-name :sem])
-    ; don't need to do anything if already have :sem
-    pcfg
+(defn add-sym-sem [pcfg features syn-name pos]
+  (let [features (merge features (get-in pcfg [syn-name :features]))]
     (loop [sem-mapper (get-in pcfg [:meta :sem-mapper pos])]
       (if (map? sem-mapper)
         (recur (get-in
@@ -322,7 +320,7 @@
           )
         ))))
 
-(defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name pos]
+(defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
    (reduce
      (fn [lexicalizing-pcfg lemma-entry]
        (let [surface-word (:name lemma-entry)
@@ -333,7 +331,6 @@
            (assoc-in
              [lemma-entry-name :features]
              features)
-           (maybe-add-sym-sem features syn-name pos)
            (assoc-in
              [lemma-entry-name :word]
              surface-word))))
@@ -344,20 +341,22 @@
   [lexicalizing-pcfg lexicon syns-to-totals pos]
   (reduce-kv
     (fn [lexicalizing-pcfg syn-name total]
-      (->
-        lexicalizing-pcfg
-        (assoc-in [syn-name :productions_total] total)
-        (assoc-in [syn-name :features] (get-in lexicon [syn-name :features]))
-        (assoc-in
-          [syn-name :productions]
-          (map (fn [lemma-entry]
-                 {:elements [(make-lem-pcfg-name
-                                        syn-name
-                                        (:name lemma-entry))]
-                  :count (:count lemma-entry)})
-               (get-in lexicon [syn-name :lemmas])))
-        (add-leaves-as-nodes lexicon syn-name pos)
-        ))
+      (let [features (get-in lexicon [syn-name :features])]
+        (->
+          lexicalizing-pcfg
+          (assoc-in [syn-name :productions_total] total)
+          (assoc-in [syn-name :features] features)
+          (add-sym-sem features syn-name pos)
+          (assoc-in
+            [syn-name :productions]
+            (map (fn [lemma-entry]
+                   {:elements [(make-lem-pcfg-name
+                                          syn-name
+                                          (:name lemma-entry))]
+                    :count (:count lemma-entry)})
+                 (get-in lexicon [syn-name :lemmas])))
+          (add-leaves-as-nodes lexicon syn-name)
+          )))
     lexicalizing-pcfg
     syns-to-totals
     ))
@@ -579,8 +578,10 @@
                 (sem-for-next current-node)))
             current-prob]]
           (let [new-productions (get-in pcfg [new-label :productions])
-                prob-modifier (/ current-prob
-                                 (get-in pcfg [new-label :productions_total]))]
+                prod-total (get-in pcfg [new-label :productions_total])
+                ; handle perverse case when `new-label` has no productions at all
+                ; TODO: may want to warn here -> sign of bad configuration
+                prob-modifier (if prod-total (/ current-prob prod-total) 0)]
             (map
               #(get-successor-child-state
                 %1

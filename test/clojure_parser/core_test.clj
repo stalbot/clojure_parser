@@ -655,11 +655,15 @@
    "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {:plural false}}
                                   {:name "faces", :count 1, :features {:plural true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
-   "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1, :features {:trans true}}]}
-   "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1,
-                                   :features {:trans false, :plural true}}]}
-   "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1,
-                                   :features {:trans true, :plural true}}]}
+   "chase.v.01" {:pos "v"
+                 :features {:trans true}
+                 :lemmas [{:name "chase", :count 1}]}
+   "walk.v.01" {:pos "v"
+                :features {:trans false}
+                :lemmas [{:name "walk", :count 1, :features {:plural true}}]}
+   "walk.v.02" {:pos "v"
+                :features {:trans true}
+                :lemmas [{:name "walk", :count 1, :features {:plural true}}]}
    "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
    "or.c.01" {:pos "c" :lemmas [{:name "or" :count 1}]}
