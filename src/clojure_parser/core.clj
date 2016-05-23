@@ -80,12 +80,8 @@
   "Find the right index in the list of productions to update
   base on the current state."
   ; TODO: revisit this when making :productions into a better structure
-  [productions found-production]
-  (first (keep-indexed
-           (fn [i prod] (if (= (:elements prod)
-                               (:elements found-production))
-                          i))
-           productions))
+  [productions_lkup found-production]
+  (get productions_lkup (mapv :label (:elements found-production)))
   )
 
 (defn normalize-pcfg [pcfg]
@@ -193,15 +189,20 @@
       (assoc
         pcfg
         sym
-        (assoc entry
-          ; TODO consider making productions not just a vector here
-          :productions (into []
-                         (map
-                           reformat-production
-                           (:productions entry)))
-          :parents (priority-map-gt)
-          :isolate_features (into #{} (:isolate_features entry))
-          )))
+        (let [productions (into []
+                            (map
+                              reformat-production
+                              (:productions entry)))]
+          (assoc entry
+            :productions productions
+            :productions_lkup (into {}
+                                (map-indexed
+                                  (fn [idx prod]
+                                    [(->> prod :elements (map :label)) idx])
+                                  productions))
+            :parents (priority-map-gt)
+            :isolate_features (into #{} (:isolate_features entry))
+            ))))
     pcfg
     pcfg
     ))
@@ -771,8 +772,8 @@
 
 ; TODO: optimize when more efficient :parents structure
 (defn find-production [pcfg-entry first-sym]
-  (first (filter #(= first-sym (-> %1 :elements first :label))
-                 (:productions pcfg-entry))))
+  (get (:productions pcfg-entry)
+       (get (:productions_lkup pcfg-entry) [first-sym])))
 
 (defn sem-for-syn-node [node syn-name synset-entry]
   "Given the node that will have this lemma with syn-name and associated
@@ -838,11 +839,11 @@
                     (append-and-go-to-child
                       (tree-node lem-name nil nil (:features word-entry))))
                   (* prob
-                     ; TODO: gross! temporary! don't relookup key!
-                     (/ (get (:parents word-entry) [syn-name
-                                                    (productions-key
-                                                      (:productions synset-entry)
-                                                      syn-production)])
+                     (/ (get (:parents word-entry)
+                             [syn-name
+                                (productions-key
+                                  (:productions_lkup synset-entry)
+                                  syn-production)])
                        (:parents_total word-entry))
                      (if (features-match (-> state zp/node :features)
                                          merged-features)
@@ -930,7 +931,7 @@
   (let [key (productions-key
               (get-in
                 pcfg
-                [(:label cur-node) :productions])
+                [(:label cur-node) :productions_lkup])
               (:production cur-node))
         update-fn (fn [f] (+ f prob))
         pcfg
@@ -989,7 +990,6 @@
         current-states))
     (sort-by last)
     reverse
-    ; TODO: consider tuning this number
     (take beam-size))
   )
 
