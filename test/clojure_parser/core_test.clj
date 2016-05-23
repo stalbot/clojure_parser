@@ -45,12 +45,6 @@
 (defn approx= [num1 num2]
   (= (format "%.8f" num1) (format "%.8f" num2)))
 
-(defn extract-stuff [parse syms]
-  (assoc
-    (into {} (map (fn [x] [x (get parse x)]) syms))
-    :children
-    (map #(extract-stuff %1 syms) (:children parse))))
-
 (deftest test-compiled-lexicon-is-well-formatted
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
   (is (= (get-in compiled-lexicon-for-test ["face" "face.v.01.face"]) 2.0))
@@ -114,9 +108,6 @@
 (def tnode
   (mk-traversable-tree
     (tree-node-tst "$AP" [(tree-node-tst "$RP" [(tree-node-tst "$R" nil)])])))
-
-(defn plain-tree [thing]
-  (-> thing zp/root (extract-stuff [:label :features])))
 
 (deftest test-get-successor-states
   (let [successors (get-successor-states

@@ -1025,3 +1025,12 @@
     )
   ))
 
+; some utils
+(defn extract-stuff [parse syms]
+  (assoc
+    (into {} (map (fn [x] [x (get parse x)]) syms))
+    :children
+    (map #(extract-stuff %1 syms) (:children parse))))
+
+(defn plain-tree [thing]
+  (-> thing zp/root (extract-stuff [:label :features])))
