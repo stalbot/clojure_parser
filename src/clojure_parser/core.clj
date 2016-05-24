@@ -369,15 +369,15 @@
         (let [pos-for-sym (get pos-to-sym-lkup pos)
               without-total (dissoc pos-to-syn-info :total)]
           (-> unlexicalized-pcfg
-              (assoc-in
+              (update-in
                 [pos-for-sym :productions_total]
-                (:total pos-to-syn-info))
+                #(+ (or % 0.0) (:total pos-to-syn-info)))
               (assoc-in
                 [pos-for-sym :lex-node]
                 true)
-              (assoc-in
+              (update-in
                 [pos-for-sym :productions]
-                (map make-syn-production without-total))
+                #(apply conj % (map make-syn-production without-total)))
               (add-word-leaves lexicon without-total pos-for-sym)
               )
           )

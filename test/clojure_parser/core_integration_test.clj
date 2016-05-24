@@ -17,7 +17,8 @@
    "$NN" {:productions [{:elements ["$N" "$N"], :count 0.1, :sem ["&0" "&1"]}
                         {:elements ["$N"], :count 0.6}]}
    "$AP" {:productions [{:elements ["$RP" "$AA"], :count 0.1, :sem ["&1"]}
-                        {:elements ["$AA"], :count 0.4}]}
+                        {:elements ["$AA"], :count 0.4}
+                        {:elements ["$AP" "$C" "$AP"], :count 0.1, :sem ["&0" "&2"]}]}
    "$AA" {:productions [{:elements ["$A" "$AA"], :count 0.3, :sem ["&0" "&1"]}
                         {:elements ["$A"], :count 0.5}]}
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
@@ -28,9 +29,13 @@
                          :head 0}
                         {:elements [["$V" {:trans false}]],
                          :sem ["&#0" "@0"]
-                         :count 0.6}]}
+                         :count 0.6}
+                        {:elements [["$V" {:trans "ditrans"}] "$NP" "$NP"],
+                         :sem ["&#0" "@0" "%1" "%2"]
+                         :count 0.1}]} ; TODO: ditrans with to!
    :meta {:sem-mapper {"$V" {:key "trans", :vals {:true ["#&0" "@0" "%1"],
-                                                  :nil ["&#0" "@0"]}},
+                                                  :nil ["&#0" "@0"],
+                                                  :ditrans ["&#0" "@0" "%1" "%2"]}},
                        "$C" ["&#1" "%0" "%2"]}}
    })
 

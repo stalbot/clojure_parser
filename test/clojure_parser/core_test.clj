@@ -66,9 +66,9 @@
   (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
          {["$S" 0] 4.0}))
-  (is (= (map #(-> %1 :elements first)
-              (get-in compiled-pcfg-for-test ["$N" :productions]))
-         (map prod-el '("person.n.01" "face.n.01" "cool.n.01"))))
+  (is (= (set (map #(-> %1 :elements first)
+                  (get-in compiled-pcfg-for-test ["$N" :productions])))
+         (set (map prod-el '("person.n.01" "face.n.01" "cool.n.01")))))
   (is (= (->> (get-in compiled-pcfg-for-test ["$N" :productions])
               (filter #(= "person.n.01" (:label (first (:elements %1)))))
               first
