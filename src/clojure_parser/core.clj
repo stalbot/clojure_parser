@@ -248,7 +248,6 @@
             (fn [old new] (+ (or old 0.0) new))
             (get-count lem)))
         lkup
-        ; TODO: hm, this isn't great, two possible ways to specify format
         (:lemmas node)
         ))
     {}
