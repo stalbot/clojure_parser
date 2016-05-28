@@ -43,7 +43,7 @@
   (build-operational-pcfg (lexicalize-pcfg pcfg-for-test lexicon-for-test)))
 
 (defn approx= [num1 num2]
-  (= (format "%.8f" num1) (format "%.8f" num2)))
+  (= (format "%.8f" (double num1)) (format "%.8f" (double num2))))
 
 (deftest test-compiled-lexicon-is-well-formatted
   (is (= 2.0 (apply + (vals (get compiled-lexicon-for-test "newly")))))
@@ -147,7 +147,7 @@
 
 (def realistic-tnode
   (mk-traversable-tree
-    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs.n.01" [])])])])))
+    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs" [])])])])))
 
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
@@ -209,9 +209,9 @@
                    (default-beam-size))]
     (is (= (count inferred) 2))
     (is (= (vals inferred) [0.7 0.3]))
-    (is (= (->> inferred keys first zp/up zp/up zp/up zp/node :production :elements (map :label))
+    (is (= (->> inferred keys first zp/up zp/up zp/node :production :elements (map :label))
            ["$N"]))
-    (is (= (map :label (-> inferred keys (nth 1) zp/up zp/up zp/up zp/node :production :elements))
+    (is (= (map :label (-> inferred keys (nth 1) zp/up zp/up zp/node :production :elements))
            ["$N" "$N"]))
     )
   (let [inferred (infer-initial-possible-states
@@ -219,7 +219,7 @@
                    compiled-lexicon-for-test
                    "cool"
                    (default-beam-size))
-        lex-label (map #(-> %1 zp/up zp/up zp/node :label) (keys inferred))]
+        lex-label (map #(-> %1 zp/up zp/node :label) (keys inferred))]
     (is (= (count inferred) 3))
     (is (= lex-label ["$A" "$N" "$N"]))
     (is (approx= (reduce + (vals inferred)) 1.0))
@@ -229,7 +229,7 @@
                    compiled-lexicon-for-test
                    "cool"
                    1)  ; checking appropriate limiting from this beam-size
-        lex-label (map #(-> %1 zp/up zp/up zp/node :label) (keys inferred))]
+        lex-label (map #(-> %1 zp/up zp/node :label) (keys inferred))]
     (is (= (count inferred) 1))
     (is (= lex-label ["$A"]))
     (is (approx= (reduce + (vals inferred)) 1.0)))
@@ -252,16 +252,12 @@
     (is (< 0 (count updated)))
     (is (= (-> updated keys last zp/root (extract-stuff [:label]))
            (-> pre-state-1
-               (zp/edit assoc :production {:elements [(prod-el "cool.n.01")], :count 1.0})
-               (append-and-go-to-child (tree-node-tst "cool.n.01" []))
-               (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil {}))
+               (append-and-go-to-child (tree-node-tst "cool" []))
                zp/root
                (extract-stuff [:label]))))
     (is (= (-> updated keys first zp/root (extract-stuff [:label]))
            (-> pre-state-2
-               (zp/edit assoc :production {:elements [(prod-el "cool.a.01")], :count 4.0})
-               (append-and-go-to-child (tree-node-tst "cool.a.01" []))
-               (append-and-go-to-child (tree-node-tst "cool.a.01.cool" nil))
+               (append-and-go-to-child (tree-node-tst "cool" []))
                zp/root
                (extract-stuff [:label]))))
     (is (= (vals updated) [0.8 0.2]))

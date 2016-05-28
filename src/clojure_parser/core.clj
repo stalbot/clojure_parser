@@ -557,7 +557,8 @@
   (let [current-node (zp/node current-state)
         num-children (-> current-node :children count)
         production (:production current-node)]
-    (if (= num-children (count (:elements production)))
+    (if (or (nil? production)
+            (= num-children (count (:elements production))))
       (filter first [[(get-parent-state current-state) current-prob]])
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
@@ -594,7 +595,7 @@
     )
   )
 
-(defn renormalize-found-states
+(defn renormalize-found-states!
   [found-states]
   (let [found-states (persistent! found-states)
         total (reduce + (map last found-states))]
@@ -616,7 +617,7 @@
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
   [pcfg current-state beam-size]
-  (renormalize-found-states
+  (renormalize-found-states!
     (loop [frontier (priority-map-gt (zp/up current-state) 1.0)
            found (transient [])
            best-prob nil]
@@ -647,6 +648,37 @@
       )
     )
   )
+
+(defn syn-w-counts-for-lem [pcfg [lemma-name lemma-count]]
+  (let [lemma-entry (get pcfg lemma-name)
+        ; TODO: still have the design problem that we 'know' lemma entries must have just one sysnet parent
+        synset-name (->> lemma-entry :parents keys first first)
+        synset-entry (get pcfg synset-name)]
+    [synset-name
+     (update synset-entry :features #(merge % (:features lemma-entry)))
+     lemma-count]
+    ))
+
+(defn synsets-split-by-function [pcfg lexical-lkup raw-word]
+  (let [lemmas-w-counts (get lexical-lkup raw-word)
+        synsets-w-counts (map #(syn-w-counts-for-lem pcfg %) lemmas-w-counts)
+        total-count (reduce + (map last synsets-w-counts))]
+    (->>
+      synsets-w-counts
+      (group-by (fn [[_ syn _]]
+                  [(:feature syn) (-> syn :parents keys first first)]))
+      (map (fn [[[feat pos] syns-to-counts]]
+             (let [total-local-count (reduce + (map last syns-to-counts))]
+               [feat
+                pos
+                (into (priority-map-gt)
+                      (map (fn [[name _ count]]
+                             [name (/ count total-local-count)])
+                           syns-to-counts))
+                ; just any sem: TODO: make the syn-level sems value-agnostic to avoid this hack
+                (-> syns-to-counts first (nth 1) :sem)
+                (/ total-local-count total-count)]))))
+    ))
 
 (defn make-next-initial-state
   "Creates the next parent of the current state in the hierarchy.
@@ -686,9 +718,12 @@
   (into
     (priority-map-gt)
     (for
-      [[lem-name prob] (get lexical-lkup word)]
-      [(tree-node lem-name nil nil (get-in pcfg [lem-name :features] {}))
-       prob])))
+      [[features pos syns _ prob]
+       (synsets-split-by-function pcfg lexical-lkup word)]
+      (let [start-sem {:val {:s0 syns}}
+            lex-node (tree-node word nil nil features start-sem)]
+        [(tree-node pos nil [lex-node] features start-sem)
+         prob]))))
 
 (defn finalize-initial-states
   "Helper for the fact that, after we've finished our bottom-up traversal,
@@ -770,19 +805,10 @@
     features1)
   )
 
-; TODO: optimize when more efficient :parents structure
-(defn find-production [pcfg-entry first-sym]
-  (get (:productions pcfg-entry)
-       (get (:productions_lkup pcfg-entry) [first-sym])))
 
-(defn sem-for-syn-node [node syn-name synset-entry]
-  "Given the node that will have this lemma with syn-name and associated
-   syn-entry as a child, return the updated semantic record and the
-   probability adjustment associated with the new additions. This means
-   instatiating a new truth condition."
-  (let [entry-sem (or (:sem synset-entry) {:val syn-name})
-        entry-lambda (:lambda entry-sem)
-        node-sem (:sem node)
+
+(defn sem-for-lex-node [syns entry-sem node-sem]
+  (let [entry-lambda (:lambda entry-sem)
         entry-lambda (if entry-lambda
                        (assoc-in entry-lambda
                                  [:form (get entry-lambda :target-idx 0)]
@@ -790,90 +816,50 @@
         cur-arg (:cur-arg node-sem)
         node-sem (if (and cur-arg entry-lambda)
                    (resolve-lambda node-sem entry-lambda 1 cur-arg)
-                   node-sem)]
+                   node-sem)
+        lex-sem-var (keyword (str "s" (count (:val node-sem))))
+        node-sem (assoc-in node-sem [:val lex-sem-var] syns)]
     [(update-in
        node-sem
        [:val (:cur-var node-sem)]
-       #(conj %1 (:val entry-sem))),
+       #(conj %1 lex-sem-var)),
      1.0]  ; TODO: obviously make this a real probability
     ))
 
-(defn update-state-probs-for-lemma
-  [pcfg states-and-probs lem-name adjust-prob]
-  "Given one possible lemma for a word (e.g. walk.v.03 for 'walk') and
-   a set of states, give back the set of states with updated info for
-   the probability, with the newly attached info from the lemma/synset,
-   and any relevant semantic information."
-  ; TODO: not amazing, this trick relies on the knowledge that
-  ; synset nodes have only one parent
-  (let [word-entry (get pcfg lem-name)
-        parents (->> word-entry :parents keys (map first))
-        parent-entries (map (fn [t] [t (get pcfg t)]) parents)
-        word-parent-info (group-by
-                           #(-> %1 last :parents keys first first)
-                           parent-entries)]
-    (reduce
-      (fn [new-states-and-probs [state prob]]
-        (let [cur-label (-> state zp/node :label)]
-          (reduce
-            (fn [new-states-and-probs [syn-name synset-entry]]
-              (let [merged-features (merge (:features synset-entry)
-                                           (:features word-entry))
-                    syn-production (find-production synset-entry lem-name)
-                    [syn-sem sem-prob-adj] (sem-for-syn-node (zp/node state)
-                                                             syn-name
-                                                             synset-entry)]
-                (assoc! new-states-and-probs
-                  (->
-                    state
-                    (zp/edit assoc :production (find-production
-                                                 (get pcfg cur-label)
-                                                 syn-name))
-                    (append-and-go-to-child
-                      (tree-node
-                        syn-name
-                        syn-production
-                        []
-                        merged-features
-                        syn-sem))
-                    (append-and-go-to-child
-                      (tree-node lem-name nil nil (:features word-entry))))
-                  (* prob
-                     (/ (get (:parents word-entry)
-                             [syn-name
-                                (productions-key
-                                  (:productions_lkup synset-entry)
-                                  syn-production)])
-                       (:parents_total word-entry))
-                     (if (features-match (-> state zp/node :features)
-                                         merged-features)
-                       1.0
-                       0.0)
-                     sem-prob-adj
-                     adjust-prob)
-                  )
-                ))
-            new-states-and-probs
-            (get word-parent-info cur-label))))
-      (transient {})
-      states-and-probs
-      )
-    ))
+(defn update-state-prob-with-lex-node
+  [[state prob] word [features pos syns syn-sem prob-adj]]
+  (let [node (zp/node state)]
+    (if (or (not= (:label node) pos)
+            (not (features-match (-> state zp/node :features) features)))
+      nil
+      (let [[new-sem sem-prob-adj]
+            (sem-for-lex-node syns syn-sem (:sem node))]
+        [(append-and-go-to-child
+           state
+           (tree-node
+             word
+             nil
+             nil
+             features
+             new-sem))
+        (* prob-adj prob sem-prob-adj)])
+      )))
 
 (defn update-state-probs-for-word
   [pcfg lexical-lkup states-and-probs word]
-  (->> word
-       (get lexical-lkup)
-       (pmap
-         (fn [[lem-name prob]]
-            (update-state-probs-for-lemma
-              pcfg
-              states-and-probs
-              lem-name
-              prob)))
-       (reduce #(merge-with! + %1 (persistent! %2)) (transient {}))
-       renormalize-found-states)
-  )
+  (let [synsets-info (synsets-split-by-function pcfg lexical-lkup word)]
+    (->>
+      states-and-probs
+      (map
+        (fn [state-prob]
+          (->>
+            synsets-info
+            (map #(update-state-prob-with-lex-node state-prob word %))
+            (filter #(not (nil? %)))
+            (into {}))))
+      (reduce #(merge-with! + %1 %2) (transient {}))
+      renormalize-found-states!)
+    ))
 
 (defn tree-is-filled
   [state]
@@ -908,7 +894,7 @@
   that they do not have any extra words (possibly very close to zero
   for some states)."
   [pcfg states-and-probs]
-  (renormalize-found-states
+  (renormalize-found-states!
     (reduce-kv
       (fn [new-states-and-probs state prob]
         (if (tree-is-filled state)
@@ -934,13 +920,14 @@
                 [(:label cur-node) :productions_lkup])
               (:production cur-node))
         update-fn (fn [f] (+ f prob))
-        pcfg
-        (update-in
-          pcfg
-          [(:label cur-node) :productions key :count]
-          update-fn)
-        with-updated-prods
-        (update-in pcfg [(:label cur-node) :productions_total] update-fn)
+        pcfg (update-in
+                pcfg
+                [(:label cur-node) :productions key :count]
+                update-fn)
+        with-updated-prods (update-in
+                             pcfg
+                             [(:label cur-node) :productions_total]
+                             update-fn)
         production (get-in pcfg [(:label cur-node) :productions key])
         child-sym (-> production :elements first :label)]
     (-> with-updated-prods
@@ -959,7 +946,7 @@
       pcfg
       (let [cur-node (peek frontier)]
         (recur
-          (into (pop frontier) (filter :children (:children cur-node)))
+          (into (pop frontier) (filter :production (:children cur-node)))
           (update-pcfg-count pcfg cur-node prob)))))
   )
 
