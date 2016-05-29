@@ -993,7 +993,8 @@
       (pmap
         (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
                              prob])
-        current-states))
+        ; TODO: need we/should we do this (take) here?
+        (take beam-size current-states)))
     (sort-by last)
     reverse
     (take beam-size))
