@@ -651,7 +651,8 @@
    "walk.v.02" {:pos "v"
                 :features {:trans true}
                 :lemmas [{:name "walk", :count 1, :features {:plural true}}]}
-   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 3}]}
+   "talk.v.03" {:pos "v" :lemmas [{:name "talk", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
    "or.c.01" {:pos "c" :lemmas [{:name "or" :count 1}]}
    "and.c.01" {:pos "c" :lemmas [{:name "and" :count 1}]}
@@ -731,6 +732,14 @@
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("cool" "or" "person" "walk")))))
+  (is (=
+        [{:v0 #{:s0 [:v1 :v0]}, :v1 #{[:v1 :v0] :s1}}
+         {:s0 {"person.n.01" 1.0}, :s1 {"talk.v.01" 0.75, "talk.v.03" 0.25}}]
+        (extract-first-sem-vals-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("person" "thalk")))))
   )
 
 (def lexicon-with-sem-net
