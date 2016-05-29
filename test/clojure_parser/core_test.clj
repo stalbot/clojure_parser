@@ -739,7 +739,7 @@
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
-            '("person" "thalk")))))
+            '("person" "talk")))))
   )
 
 (def lexicon-with-sem-net
