@@ -271,8 +271,7 @@
       zp/up
       (append-and-go-to-child (tree-node-tst "$VP" {:elements ["$V"]} []))
       (append-and-go-to-child (tree-node-tst "$V" []))
-      (append-and-go-to-child (tree-node-tst "face.v.01" []))
-      (append-and-go-to-child (tree-node-tst "face.v.01.face" nil))))
+      (append-and-go-to-child (tree-node-tst "face" []))))
 
 (def good-parse-for-eos2
   (-> ambiguous-inferred-state1
@@ -282,8 +281,7 @@
       zp/up
       (append-and-go-to-child (tree-node-tst "$VP" {:elements ["$V"]} []))
       (append-and-go-to-child (tree-node-tst "$V" []))
-      (append-and-go-to-child (tree-node-tst "chase.v.01" []))
-      (append-and-go-to-child (tree-node-tst "chase.v.01.chase" nil))))
+      (append-and-go-to-child (tree-node-tst "chase" []))))
 
 (def bad-parse-for-eos
   (-> ambiguous-inferred-state2
@@ -291,8 +289,7 @@
       zp/up
       zp/up
       (append-and-go-to-child (tree-node-tst "$N" []))
-      (append-and-go-to-child (tree-node-tst "cool.n.01" []))
-      (append-and-go-to-child (tree-node-tst "cool.n.01.cool" nil))))
+      (append-and-go-to-child (tree-node-tst "cool" []))))
 
 (deftest test-update-probs-for-eos
   (let [updated (update-state-probs-for-eos
@@ -390,12 +387,10 @@
   (let [in-progress-parse-with-bad-feature
         (-> good-parse-for-eos1
             zp/remove
-            zp/remove
             (zp/edit assoc :children [])
             (zp/edit assoc-in [:features "plural"] false))
         in-progress-parse-with-good-feature
         (-> good-parse-for-eos1
-            zp/remove
             zp/remove
             (zp/edit assoc :children [])
             (zp/edit assoc-in [:features "plural"] true))
@@ -420,23 +415,17 @@
                        compiled-pcfg-with-better-features
                        compiled-lex-with-better-features
                        '("faces" "chase"))
-        [new-pcfg parses] parse-result]
+        [_ parses] parse-result]
     (is (= (count parses) 1))
     (is (= (-> parses first first
-               :children first :children first :children first :children first
+               :children first :children first :children first
                :features)
            {"plural" true}) )
     (is (= (-> parses first first :features) {"plural" true}))
-    (is (= (-> parses first first :children first :features) {"plural" true}))
-    (is (> (get-in new-pcfg ["face.n.01.faces" :parents ["face.n.01" 1]])
-           (get-in
-             compiled-pcfg-with-better-features
-             ["face.n.01.faces" :parents ["face.n.01" 1]])))
-    (is (= (get-in new-pcfg ["face.n.01.face" :parents ["face.n.01" 1]])
-           (get-in
-             compiled-pcfg-with-better-features
-             ["face.n.01.face" :parents ["face.n.01" 1]])))
-    )
+    ; TODO: there used to be a test here making sure the appropriate lex
+    ; count was updated in the learning -> now that doesn't happen anymore,
+    ; consider making a new test fro whatever behavior replaces it.
+    (is (= (-> parses first first :children first :features) {"plural" true})))
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-with-better-features
                        compiled-lex-with-better-features
@@ -675,7 +664,8 @@
                             lexicon-for-testing-features-and-sems-in-prods)))
 
 (defn extract-first-sem-vals-from-parse [parse]
-  (-> parse last first first :sem :val))
+  (let [sem (-> parse last first first :sem)]
+    [(:val sem) (:lex-vals sem)]))
 
 (deftest test-pcfg-sem-formatting
   (is (= (set [[{:inherit-var true}]
@@ -703,8 +693,8 @@
 
 (deftest test-parse-with-sems
   (is (=
-        {:v0 #{"person.n.01" [:v1 :v0]}
-         :v1 #{"walk.v.01" [:v1 :v0]}}
+         [{:v0 #{[:v1 :v0] :s0}, :v1 #{[:v1 :v0] :s1}}
+          {:s0 {"person.n.01" 1.0}, :s1 {"walk.v.01" 1.0}}]
          (extract-first-sem-vals-from-parse
            (parse-and-learn-sentence
              compiled-pcfg-test-sems-features

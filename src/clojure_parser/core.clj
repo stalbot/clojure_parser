@@ -504,6 +504,7 @@
                            ; (and if so, then why not just copy the child sem fully, minus inheritance)
                            :lambda (:lambda final-child-sem)
                            :val (:val final-child-sem)
+                           :lex-vals (:lex-vals final-child-sem)
                            :cur-arg (:cur-arg final-child-sem))
                           final-child-sem)
         operation (pcfg-node-opts-for-child
@@ -666,7 +667,7 @@
     (->>
       synsets-w-counts
       (group-by (fn [[_ syn _]]
-                  [(:feature syn) (-> syn :parents keys first first)]))
+                  [(:features syn) (-> syn :parents keys first first)]))
       (map (fn [[[feat pos] syns-to-counts]]
              (let [total-local-count (reduce + (map last syns-to-counts))]
                [feat
@@ -720,7 +721,7 @@
     (for
       [[features pos syns _ prob]
        (synsets-split-by-function pcfg lexical-lkup word)]
-      (let [start-sem {:val {:s0 syns}}
+      (let [start-sem {:lex-vals {:s0 syns}}
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
          prob]))))
@@ -805,8 +806,6 @@
     features1)
   )
 
-
-
 (defn sem-for-lex-node [syns entry-sem node-sem]
   (let [entry-lambda (:lambda entry-sem)
         entry-lambda (if entry-lambda
@@ -817,8 +816,8 @@
         node-sem (if (and cur-arg entry-lambda)
                    (resolve-lambda node-sem entry-lambda 1 cur-arg)
                    node-sem)
-        lex-sem-var (keyword (str "s" (count (:val node-sem))))
-        node-sem (assoc-in node-sem [:val lex-sem-var] syns)]
+        lex-sem-var (keyword (str "s" (count (:lex-vals node-sem))))
+        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
     [(update-in
        node-sem
        [:val (:cur-var node-sem)]
