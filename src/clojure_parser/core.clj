@@ -506,7 +506,7 @@
                            :val (:val final-child-sem)
                            :lex-vals (:lex-vals final-child-sem)
                            :cur-arg (:cur-arg final-child-sem))
-                          final-child-sem)
+                         final-child-sem)
         operation (pcfg-node-opts-for-child
                     parent-node
                     (- (count (:children parent-node)) 1))
@@ -610,6 +610,12 @@
       found-states
       )))
 
+(defn pos-state [lex-state]
+  "Takes the state at a lex node and does the necessary steps to make it a
+   state ready to traverse as part of infer-possible-states"
+  (let [lex-sem (-> lex-state zp/node :sem)]
+    (-> lex-state zp/up (zp/edit #(assoc % :sem lex-sem)))))
+
 (defn infer-possible-states
   "expands into successor states of the current state, yield up to *max-states*
    or until any further states found would be less than *min-prob-ratio* as
@@ -619,7 +625,7 @@
    this is a form of A* search, if we want to be fancy about it."
   [pcfg current-state beam-size]
   (renormalize-found-states!
-    (loop [frontier (priority-map-gt (zp/up current-state) 1.0)
+    (loop [frontier (priority-map-gt (pos-state current-state) 1.0)
            found (transient [])
            best-prob nil]
       (if (or (>= (count found) beam-size)
@@ -712,6 +718,28 @@
              (get-in production [:sem 0 :inherit-var]))
       {:val {:v0 #{parent-sym}}, :cur-var :v0})))
 
+(defn sem-for-lex-node [syns entry-sem node-sem]
+  (let [entry-lambda (:lambda entry-sem)
+        entry-lambda (if entry-lambda
+                       (assoc-in entry-lambda
+                                 [:form (get entry-lambda :target-idx 0)]
+                                 (:cur-var node-sem)))
+        cur-arg (:cur-arg node-sem)
+        node-sem (if (and cur-arg entry-lambda)
+                   (resolve-lambda node-sem entry-lambda 1 cur-arg)
+                   node-sem)
+        lex-sem-var (keyword (str "s" (count (:lex-vals node-sem))))
+        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
+    [(update-in
+       node-sem
+       [:val (:cur-var node-sem)]
+       #(conj %1 lex-sem-var)),
+     1.0]  ; TODO: obviously make this a real probability
+    ))
+
+(def first-sem
+  {:cur-var :v0, :val {:v0 #{}}})
+
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
@@ -719,9 +747,9 @@
   (into
     (priority-map-gt)
     (for
-      [[features pos syns _ prob]
+      [[features pos syns syn-sem prob]
        (synsets-split-by-function pcfg lexical-lkup word)]
-      (let [start-sem {:lex-vals {:s0 syns}}
+      (let [[start-sem _] (sem-for-lex-node syns syn-sem first-sem)
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
          prob]))))
@@ -805,25 +833,6 @@
                       (or (nil? val) (= val v)))))
     features1)
   )
-
-(defn sem-for-lex-node [syns entry-sem node-sem]
-  (let [entry-lambda (:lambda entry-sem)
-        entry-lambda (if entry-lambda
-                       (assoc-in entry-lambda
-                                 [:form (get entry-lambda :target-idx 0)]
-                                 (:cur-var node-sem)))
-        cur-arg (:cur-arg node-sem)
-        node-sem (if (and cur-arg entry-lambda)
-                   (resolve-lambda node-sem entry-lambda 1 cur-arg)
-                   node-sem)
-        lex-sem-var (keyword (str "s" (count (:lex-vals node-sem))))
-        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
-    [(update-in
-       node-sem
-       [:val (:cur-var node-sem)]
-       #(conj %1 lex-sem-var)),
-     1.0]  ; TODO: obviously make this a real probability
-    ))
 
 (defn update-state-prob-with-lex-node
   [[state prob] word [features pos syns syn-sem prob-adj]]

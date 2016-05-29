@@ -213,6 +213,8 @@
            ["$N"]))
     (is (= (map :label (-> inferred keys (nth 1) zp/up zp/up zp/node :production :elements))
            ["$N" "$N"]))
+    (is (= (-> inferred keys first zp/node :sem)
+           {:val {:v0 #{:s0}}, :cur-var :v0, :lex-vals {:s0 {"face.n.01" 1.0}}}))
     )
   (let [inferred (infer-initial-possible-states
                    compiled-pcfg-for-test
@@ -406,8 +408,6 @@
     (is (= (-> updated keys first zp/node :features (get "plural")) true))
     (is (= (-> updated keys first zp/up zp/node :features (get "plural"))
            true))
-    (is (= (-> updated keys first zp/up zp/up zp/node :features (get "plural"))
-           true))
     ))
 
 (deftest test-parse-with-real-features
@@ -561,15 +561,17 @@
                      compiled-lex-for-features-in-prods
                      '("person" "walk" "face"))]
     (is (= 1 (count parses)))
-    (is (= "walk.v.02"
-           (-> parses first first :children last :children first :children first :label))))
+    (is (= ["walk.v.02"]
+           ; since the test PCFG data is all screwy, can't rely on this getting to end ->
+           ; have to check it on the lex node itself
+           (-> parses first first :children last :children first :children first :sem :lex-vals :s1 keys))))
     (let [[_ parses] (parse-and-learn-sentence
                        compiled-prod-pcfg
                        compiled-lex-for-features-in-prods
                        '("person" "walk"))]
       (is (= 1 (count parses)))
-      (is (= "walk.v.01"
-             (-> parses first first :children last :children first :children first :label)))
+      (is (= ["walk.v.01"]
+             (-> parses first first :sem :lex-vals :s1 keys)))
     ))
 
 (def example-parent-tree-node
@@ -701,28 +703,29 @@
              compiled-lex-test-sems-features
              '("person" "walk")))))
   (is (=
-        {:v0 #{"person.n.01" [:v1 :v0 :v2]}
-         :v1 #{"walk.v.02" [:v1 :v0 :v2]}
-         :v2 #{"face.n.01" [:v1 :v0 :v2]}}
+        [{:v0 #{[:v1 :v0 :v2] :s0}, :v1 #{[:v1 :v0 :v2] :s1}, :v2 #{:s2 [:v1 :v0 :v2]}}
+         {:s0 {"person.n.01" 1.0}, :s1 {"walk.v.02" 1.0}, :s2 {"face.n.01" 1.0}}]
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("person" "walk" "face")))))
   (is (=
-        {:v0 #{"person.n.01" [:v1 :v0 :v2]}
-         :v1 #{"chase.v.01" [:v1 :v0 :v2]}
-         :v2 #{"face.n.01" "person.n.01" [:v1 :v0 :v2]}}
+        [{:v0 #{[:v1 :v0 :v2] :s0}, :v1 #{[:v1 :v0 :v2] :s1}, :v2 #{:s2 :s3 [:v1 :v0 :v2]}}
+         {:s0 {"person.n.01" 1.0}, :s1 {"chase.v.01" 1.0},
+          :s3 {"face.n.01" 1.0}, :s2 {"person.n.01" 1.0}}]
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("person" "chase" "person" "face")))))
   (is (=
-        {:v0 #{[:v1 :v0 :v2] "cool.n.01"},
-         :v1 #{"or.c.01" [:v3 :v1] [:v1 :v0 :v2]},
-         :v2 #{"person.n.01" [:v1 :v0 :v2]},
-         :v3 #{[:v3 :v1] "walk.v.01"}}
+        [{:v0 #{[:v1 :v0 :v2] :s0},
+          :v1 #{[:v1 :v0 :v2] [:v3 :v1] :s1},
+          :v2 #{:s2 [:v1 :v0 :v2]}
+          :v3 #{:s3 [:v3 :v1]}}
+         {:s0 {"cool.n.01" 1.0}, :s1 {"or.c.01" 1.0},
+          :s3 {"walk.v.01" 1.0}, :s2 {"person.n.01" 1.0}}]
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             compiled-pcfg-test-sems-features
