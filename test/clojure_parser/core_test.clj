@@ -114,7 +114,9 @@
                      compiled-pcfg-for-test
                      tnode
                      1.0)]
-    (is (= (map last successors) [0.375 0.625]))
+    (is (= (count successors) 2))
+    (is (approx= (-> successors first last) 0.3374999999))
+    (is (approx= (-> successors second last) 0.5625))
     (is (=
           (plain-tree (append-and-go-to-child tnode (tree-node-tst "$AA" [])))
           (-> successors first first plain-tree)
@@ -172,7 +174,8 @@
                 keys
                 (map #(-> % zp/root :children second :production :elements count)))
            [1 2]))
-    (is (= (vals learned) [0.6 0.4])))
+    (is (approx= (first (vals learned)) 0.6))
+    (is (approx= (second (vals learned)) 0.4)))
   )
 
 (def ambiguous-inferred-state1
@@ -225,7 +228,7 @@
     (is (= (count inferred) 3))
     (is (= lex-label ["$A" "$N" "$N"]))
     (is (approx= (reduce + (vals inferred)) 1.0))
-    (is (approx= (first (vals inferred)) 0.571428571428571)))
+    (is (approx= (first (vals inferred)) 0.54545454545454)))
   (let [inferred (infer-initial-possible-states
                    compiled-pcfg-for-test
                    compiled-lexicon-for-test
@@ -366,7 +369,7 @@
                        '("cool" "cool" "face"))
         [new-pcfg parses] parse-result]
     ; the ["$AP" "$N"] production does not contribute to the $N parents
-    (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 1]]) 0.4836734693877551))
+    (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 1]]) 0.5))
     (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 2]]) 0.7))
     (is (= (reduce + (map :count (get-in new-pcfg ["$S" :productions]))) 5.0))
     (is (= (count parses) 2))
