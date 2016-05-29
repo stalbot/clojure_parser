@@ -4,6 +4,11 @@
             [clojure.zip :as zp]))
 
 (defmacro start-sym [] "$S")
+(defmacro parent-penalty []
+  "Many productions have only one possible parent, which means it will have
+   probability 1.0 of being produced from that parent when climbing up the tree.
+   Introduce a penalty to both prevent infinite loops and penalize deeper nested trees"
+  0.9)
 
 (defn priority-map-gt [& keyvals]
   "More probability is always going to be better"
@@ -17,6 +22,8 @@
    "s" "$A"
    "r" "$R"
    "c" "$C"
+   "d" "$D"
+   "p" "$P"
    })
 
 (defn merge-with! [f m1 m2]
@@ -99,7 +106,7 @@
   (reduce-kv
     (fn
       [new-pcfg node-name node]
-      (let [total (apply + (vals (:parents node)))]
+      (let [total (reduce + (vals (:parents node)))]
         (assoc-in new-pcfg [node-name :parents_total] total)))
     pcfg
     pcfg
@@ -582,7 +589,9 @@
                 prod-total (get-in pcfg [new-label :productions_total])
                 ; handle perverse case when `new-label` has no productions at all
                 ; TODO: may want to warn here -> sign of bad configuration
-                prob-modifier (if prod-total (/ current-prob prod-total) 0)]
+                prob-modifier (if prod-total
+                                (* (/ current-prob prod-total) (parent-penalty))
+                                0)]
             (map
               #(get-successor-child-state
                 %1
@@ -799,22 +808,24 @@
             [frontier found]
             (reduce-kv
               (fn [[frontier found] [parent-sym prod] prob]
-                (if (>= (count found) beam-size)
-                  (reduced [frontier found])
-                  (if (or (= parent-sym (start-sym))
-                          (< (* prob current-prob) (min-prob-ratio)))
+                (cond
+                  (or (>= (count found) beam-size))
+                    (reduced [frontier found])
+                  (< (* prob current-prob) (min-prob-ratio))
+                    [frontier found]
+                  (= parent-sym (start-sym))
                     [frontier
                      (conj!
                        found
                        [(make-next-initial-state pcfg current-state parent-sym prod)
-                        (* prob current-prob)])
-                     ]
-                    [(assoc
-                       frontier
-                       (make-next-initial-state pcfg current-state parent-sym prod)
-                       (* prob current-prob))
-                     found
-                     ])))
+                        (* prob current-prob)])]
+                  :else
+                     [(assoc
+                        frontier
+                        (make-next-initial-state pcfg current-state parent-sym prod)
+                        (* prob current-prob (parent-penalty)))
+                      found]
+                  ))
               [(pop frontier) found]
               (parents-with-normed-probs pcfg (:label current-state))
               )]
