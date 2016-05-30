@@ -7,17 +7,18 @@
 
 (def super-realistic-pcfg
   {
-   "$S" {:productions [{:elements ["$DP" "$VP"], :count 4, :sem ["#&1" "%0"]}]
-         :isolate_features ["plural" "person"]}
+   "$S" {:productions [{:elements ["$DP" "$VP"], :count 4, :sem ["#&1" "%0"], :full_features ["plural" "person"]}]
+         :isolate_features [ "person"]}
    "$NP" {:productions [{:elements ["$NN"], :count 0.6}
                         {:elements ["$AP" "$NN"], :sem ["&0" "&1"], :count 0.4}]}
    "$DP" {:productions [{:elements ["$D" "$NP"], :count 0.6, :sem ["&0" "&1"]}
                         {:elements ["$NP"], :count 0.4}
-                        {:elements ["$DP" "$PP"], :count 0.2, :sem ["#1" "&%0"]}
+                        {:elements [["$VP" {:tense "present_part"}]], :count 0.2}
+                        {:elements ["$DP" "$PP"], :count 0.2, :sem ["#1" "&%0"], :head 0}
                         {:elements ["$DP" "$C" "$DP"],
                          :count 0.1,
                          :sem ["&#1" "%0" "%2"]}]}
-   "$NN" {:productions [{:elements ["$N" "$N"], :count 0.1, :sem ["&0" "&1"]}
+   "$NN" {:productions [{:elements [["$N" {:plural false}] "$N"], :count 0.1, :sem ["&0" "&1"]}
                         {:elements ["$N"], :count 0.6}]}
    "$AP" {:productions [{:elements ["$RP" "$AA"], :count 0.1, :sem ["&1"]}
                         {:elements ["$AA"], :count 0.4}
@@ -26,9 +27,9 @@
                         {:elements ["$A"], :count 0.5}]}
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7, :sem ["&0" "&1"]}
                         {:elements ["$R"], :count 0.7}]}
-   "$VP" {:productions [{:elements ["$VP" "$PP"] :count 0.75, :sem ["#1" "&%0"]}
+   "$VP" {:productions [{:elements ["$VP" "$PP"] :count 0.75, :sem ["#1" "&%0"], :head 0}
                         {:elements ["$VV"] :count 0.75}
-                        {:elements ["$VV" "$RP"] :count 0.25, :sem ["&0" "&1"]}]}
+                        {:elements ["$VV" "$RP"] :count 0.25, :sem ["&0" "&1"], :head 0}]}
    "$PP" {:productions [{:elements ["$P" "$DP"] :count 1.0 :sem ["&#0" "@0" "%1"]}]}
    "$VV" {:productions [{:elements [["$V" {:trans true}] "$DP"],
                          :count 0.4,
@@ -78,7 +79,7 @@
       false)))
 
 (defn labels [sentence beam-size]
-  (map (fn [[parse prob]] [(extract-stuff parse [:label]) (:sem parse) prob])
+  (map (fn [[parse prob]] [(extract-stuff parse [:label :features]) (:sem parse) prob])
        (->> (quick-parse sentence beam-size)
              )))
 
@@ -86,8 +87,8 @@
   (map #(count (quick-parse % 50)) (repeat times sentence))
   )
 
-;(deftest some-sentence
-;  (quick-parse "cows eat green grass" 50))
+(deftest some-sentence
+  (quick-parse "cows eat green grass" 50))
 
 
 

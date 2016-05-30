@@ -208,7 +208,8 @@
                                     [(->> prod :elements (map :label)) idx])
                                   productions))
             :parents (priority-map-gt)
-            :isolate_features (into #{} (:isolate_features entry))
+            :isolate_features (into #{}
+                                    (map keyword (:isolate_features entry)))
             ))))
     pcfg
     pcfg
@@ -547,20 +548,39 @@
 (defn get-next-features
   [current-node new-entry is-head]
   ; TODO: perhaps more here later
-  (let [inherited (if is-head (:features current-node) {})]
-    (merge inherited (:features new-entry)))
+  (let [inherited (if is-head (:features current-node) {})
+        last-child (last (:children current-node))
+        carried (->> (:full_features (:production current-node))
+                     (map keyword)
+                     (map (fn [f] [f (get-in last-child [:features f])]))
+                     (filter #(-> % second nil? not))
+                     (into {}))]
+    (merge carried inherited (:features new-entry)))
   )
 
-(defn get-is-head [current-node index]
+(defn is-head? [current-node index]
   (let [head-index (:head (:production current-node))]
     (or (= head-index index)
       (and (nil? head-index)
            (= (- (count (:elements (:production current-node))) 1)
               index)))))
 
+(defn get-parent-features [parent-node cur-node]
+  (if (is-head? parent-node (- (count (:children parent-node)) 1))
+    (reduce
+      #(dissoc %1 %2)
+      (:features cur-node)
+      (:isolate_features parent-node))
+    (:features parent-node)))
+
 (defn get-parent-state [current-state]
   (let [parent (zp/up current-state)]
-    (and parent (zp/edit parent assoc :sem (-> parent zp/node sem-for-parent)))
+    (and parent (zp/edit parent assoc
+                                  :sem (-> parent zp/node sem-for-parent)
+                                  :features (get-parent-features
+                                              (zp/node parent)
+                                              (zp/node current-state))
+                         ))
     ))
 
 (defn get-successor-states
@@ -573,7 +593,7 @@
       (filter first [[(get-parent-state current-state) current-prob]])
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
-            is-head (get-is-head current-node num-children)
+            is-head (is-head? current-node num-children)
             next-features (get-next-features
                             current-node
                             new-entry
@@ -629,8 +649,12 @@
    created with a terminal symbol"
   (if (:production (zp/node lex-state))
     lex-state
-    (let [lex-sem (-> lex-state zp/node :sem)]
-      (-> lex-state zp/up (zp/edit #(assoc % :sem lex-sem))))))
+    (let [lex-node (zp/node lex-state)
+          lex-sem (:sem lex-node)
+          lex-feat (:features lex-node)]
+      (-> lex-state zp/up (zp/edit #(assoc %
+                                       :sem lex-sem
+                                       :features lex-feat))))))
 
 (defn infer-possible-states
   "expands into successor states of the current state, yield up to *max-states*
@@ -713,27 +737,16 @@
                  parent-sym
                  production
                  [current-state]
-                 (apply dissoc
-                        (:features current-state)
-                        (get-in pcfg
-                          [(:label current-state) :isolate_features]))
+                 {}
                  nil)
         ; TODO: this is jank. fake the sem on the first pass, rely
-        ; on a later step to clean up
+        ; on a later step to clean up  (also maybe not needed anymore?)
         parent-sem (if (-> current-state :sem nil?)
-                     {:val {:v0 #{parent-sym}}})]
-    (assoc parent :sem parent-sem))
-  (tree-node
-    parent-sym
-    production
-    [current-state]
-    (apply dissoc
-           (:features current-state)
-           (get-in pcfg
-                   [(:label current-state) :isolate_features]))
-    (if (and (-> current-state :sem nil?)
-             (get-in production [:sem 0 :inherit-var]))
-      {:val {:v0 #{parent-sym}}, :cur-var :v0})))
+                     {:val {:v0 #{parent-sym}}})
+        parent-features (get-parent-features parent current-state)]
+    (assoc parent
+      :sem parent-sem
+      :features parent-features)))
 
 (defn sem-for-lex-node [syns entry-sem node-sem]
   (let [entry-lambda (:lambda entry-sem)
@@ -1004,7 +1017,7 @@
           (map (fn [[k v]] [k (* v prior-prob)]))
           states-with-probs))
       '()
-      (pmap
+      (map  ; TODO: pmap!
         (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
                              prob])
         ; TODO: need we/should we do this (take) here?

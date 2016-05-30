@@ -8,7 +8,7 @@
 
 (def pcfg-for-test
   {
-   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :full_features ["plural" "person"]}]
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$AP" "$N"], :count 0.3}
                         {:elements ["$N" "$N"], :count 0.3}
@@ -26,8 +26,8 @@
 (def lexicon-for-test
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
                                     {:name "individual", :count 2}]}
-   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {"plural" false}}
-                                  {:name "faces", :count 1, :features {"plural" true}}]}
+   "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {:plural false}}
+                                  {:name "faces", :count 1, :features {:plural true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
    "chase.v.01" {:pos "v" :lemmas [{:name "chase", :count 1}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
@@ -60,10 +60,10 @@
   (is (approx= 1.3 (get-in compiled-pcfg-for-test ["$NP" :productions_total])))
   (is (approx= 0.5 (get-in compiled-pcfg-for-test ["$AP" :productions_total])))
   (is (= (:parents (get compiled-pcfg-for-test "$S")) {}))
-  (is (= (map #(dissoc % :sem) (:productions (get compiled-pcfg-for-test "$S")))
+  (is (= (map #(dissoc % :sem :full_features) (:productions (get compiled-pcfg-for-test "$S")))
          [{:elements (map prod-el ["$NP" "$VP"]) :count 4.0}]))
   ; below assertion has nice property of failing if we kept :isolate_features as a vector
-  (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) "plural"))
+  (is (contains? (get-in compiled-pcfg-for-test ["$S" :isolate_features]) :plural))
   (is (= (:parents (get compiled-pcfg-for-test "$NP"))
          {["$S" 0] 4.0}))
   (is (= (set (map #(-> %1 :elements first)
@@ -77,9 +77,9 @@
   (is (= (get-in compiled-pcfg-for-test ["$N" :lex-node]) true))
   (is (= (get-in compiled-pcfg-for-test ["$NP" :lex-node]) nil))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.faces" :features])
-         {"plural" true}))
+         {:plural true}))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :features])
-         {"plural" false}))
+         {:plural false}))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents_total])
          3.0))
   (is (= (get-in compiled-pcfg-for-test ["face.n.01.face" :parents])
@@ -138,13 +138,13 @@
   (let [with-feature (->
                        tnode
                        zp/down
-                       (zp/edit #(assoc %1 :features {"plural" true})))
+                       (zp/edit #(assoc %1 :features {:plural true})))
         successor (get-successor-states
                     compiled-pcfg-for-test
                     with-feature
                     1.0)]
-    (is (= (-> successor first first zp/node :features) {"plural" true}))
-    (is (= (-> successor (nth 1) first zp/node :features) {"plural" true}))
+    (is (= (-> successor first first zp/node :features) {:plural true}))
+    (is (= (-> successor (nth 1) first zp/node :features) {:plural true}))
   ))
 
 (def realistic-tnode
@@ -378,7 +378,7 @@
   )
 
 (def lexicon-for-test-with-better-features
-  (assoc-in lexicon-for-test ["chase.v.01" :lemmas 0 :features "plural"] true))
+  (assoc-in lexicon-for-test ["chase.v.01" :lemmas 0 :features :plural] true))
 
 (def compiled-lex-with-better-features
   (make-lexical-lkup lexicon-for-test-with-better-features))
@@ -393,12 +393,12 @@
         (-> good-parse-for-eos1
             zp/remove
             (zp/edit assoc :children [])
-            (zp/edit assoc-in [:features "plural"] false))
+            (zp/edit assoc-in [:features :plural] false))
         in-progress-parse-with-good-feature
         (-> good-parse-for-eos1
             zp/remove
             (zp/edit assoc :children [])
-            (zp/edit assoc-in [:features "plural"] true))
+            (zp/edit assoc-in [:features :plural] true))
         updated (update-state-probs-for-word
                   compiled-pcfg-with-better-features
                   compiled-lex-with-better-features
@@ -408,8 +408,8 @@
                   )]
     (is (= (count updated) 1))
     (is (= (first (vals updated)) 1.0))
-    (is (= (-> updated keys first zp/node :features (get "plural")) true))
-    (is (= (-> updated keys first zp/up zp/node :features (get "plural"))
+    (is (= (-> updated keys first zp/node :features (get :plural)) true))
+    (is (= (-> updated keys first zp/up zp/node :features (get :plural))
            true))
     ))
 
@@ -423,12 +423,12 @@
     (is (= (-> parses first first
                :children first :children first :children first
                :features)
-           {"plural" true}) )
-    (is (= (-> parses first first :features) {"plural" true}))
+           {:plural true}) )
+    (is (= (-> parses first first :children first :features) {:plural true}))
     ; TODO: there used to be a test here making sure the appropriate lex
     ; count was updated in the learning -> now that doesn't happen anymore,
-    ; consider making a new test fro whatever behavior replaces it.
-    (is (= (-> parses first first :children first :features) {"plural" true})))
+    ; consider making a new test for whatever behavior replaces it.
+    (is (= (-> parses first first :children first :features) {:plural true})))
   (let [parse-result (parse-and-learn-sentence
                        compiled-pcfg-with-better-features
                        compiled-lex-with-better-features
@@ -442,7 +442,9 @@
 
 (def more-realistic-pcfg
   {
-   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+   "$S" {:productions [{:elements ["$NP" "$VP"],
+                        :count 4,
+                        :full_features ["plural" "person"]}]
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$AP" "$NN"], :count 0.3}
                         {:elements ["$NN"], :count 0.7}]}
@@ -499,7 +501,7 @@
 
 (def pcfg-with-features-in-prods
   {
-   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4}]
+   "$S" {:productions [{:elements ["$NP" "$VP"], :count 4, :full_features ["plural" "person"]}]
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3}
                         {:elements ["$N"], :count 0.7}]}
@@ -515,10 +517,14 @@
    "face.n.01" {:pos "n" :lemmas [{:name "face", :count 3, :features {:plural false}}
                                   {:name "faces", :count 1, :features {:plural true}}]}
    "face.v.01" {:pos "v" :lemmas [{:name "face", :count 2}]}
-   "chase.v.01" {:pos "v", :features {:trans true}, :lemmas [{:name "chase", :count 1}]}
+   "chase.v.01" {:pos "v"
+                 :features {:trans true}
+                 :lemmas [{:name "chase", :count 1, :features {:plural true}}
+                          {:name "chases", :count 1, :features {:plural false}}]}
    "walk.v.01" {:pos "v" :lemmas [{:name "walk", :count 1, :features {:trans false}}]}
    "walk.v.02" {:pos "v" :lemmas [{:name "walk", :count 1, :features {:trans true}}]}
-   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {:plural true}}]}
+   "talk.v.01" {:pos "v" :lemmas [{:name "talk", :count 1, :features {:plural true}},
+                                  {:name "talks", :count 1, :features {:plural false}}]}
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}})
 
 (def compiled-lex-for-features-in-prods
@@ -544,11 +550,18 @@
   (let [[_ parses] (parse-and-learn-sentence
                     compiled-prod-pcfg
                     compiled-lex-for-features-in-prods
-                    '("person" "chase" "face"))]
+                    '("person" "chases" "face"))]
     (is (= 1 (count parses)))
     (is (= {:trans true, :plural false}
            (-> parses first first :children last :children first :features)))
-    ))
+    )
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("face" "person" "talks"))]
+    (is (= 1 (count parses)))
+    )
+  )
 
 (deftest test-no-parse-when-blocked-by-features
   (let [[_ parses] (parse-and-learn-sentence
@@ -559,8 +572,20 @@
   (let [[_ parses] (parse-and-learn-sentence
                      compiled-prod-pcfg
                      compiled-lex-for-features-in-prods
-                     '("person" "chase"))]
+                     '("person" "chases"))]
     (is (= 0 (count parses))))
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("face" "person" "talk"))]
+    (is (= 0 (count parses)))
+    )
+  (let [[_ parses] (parse-and-learn-sentence
+                     compiled-prod-pcfg
+                     compiled-lex-for-features-in-prods
+                     '("person" "chase" "face"))]
+    (is (= 0 (count parses)))
+    )
   )
 
 (deftest test-nil-features-wont-block-parse
