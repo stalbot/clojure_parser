@@ -149,7 +149,7 @@
 
 (def realistic-tnode
   (mk-traversable-tree
-    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node-tst "dogs" [])])])])))
+    (tree-node-tst "$S" [(tree-node-tst "$NP" [(tree-node-tst "$N" [(tree-node "dogs" nil nil)])])])))
 
 (deftest test-infer-possible-states
   ; TODO: more here: test when it hits max, when there are no states to generate,
@@ -163,20 +163,20 @@
                (append-and-go-to-child (tree-node "$N" nil []))
                plain-tree)))
     (is (approx= (first (vals learned)) 1.0)))
-  (let [child (-> realistic-tnode zp/down)
+  (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
         learned (infer-possible-states compiled-pcfg-for-test child 1)]
     (is (= (-> learned keys first zp/root :children second :production :elements count)
            1))  ; make sure we got the higher-probability $V production as the only one
     (is (approx= (first (vals learned)) 1.0)))
-  (let [child (-> realistic-tnode zp/down)
+  (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
         learned (infer-possible-states compiled-pcfg-for-test child 2)]
     (is (= (->> learned
                 keys
                 (map #(-> % zp/root :children second :production :elements count)))
            [1 2]))
     (is (approx= (first (vals learned)) 0.6))
-    (is (approx= (second (vals learned)) 0.4)))
-  )
+    (is (approx= (second (vals learned)) 0.4))
+    ))
 
 (def ambiguous-inferred-state1
   (let [raw (tree-node-tst
@@ -477,6 +477,25 @@
                           compiled-lex-with-better-features
                           '("face" "chase" "newly" "cool" "person")))))
   )
+
+(def pcfg-for-testing-terminal-nodes
+  (-> pcfg-for-test
+      (assoc "$INF" {:productions [{:elements ["to" "$VP"], :count 0.1}]})
+      (update-in ["$NP" :productions] #(conj % {:elements ["$INF"], :count 0.1}))
+      (lexicalize-pcfg lexicon-for-test)
+      build-operational-pcfg
+      ))
+
+(deftest test-terminal-nodes-in-pcfg
+  (let [parse (parse-and-learn-sentence
+                pcfg-for-testing-terminal-nodes
+                compiled-lexicon-for-test
+                ["cool" "chase" "to" "face"])]
+    (is (= (count (second parse)) 1))
+    ; $S -> [$NP $VP] -> [$V $NP] -> [$INF]
+    (is (= (-> parse second keys first :children second :children second :children first :label)
+           "$INF"))
+    ))
 
 (def pcfg-with-features-in-prods
   {

@@ -78,9 +78,8 @@
       false)))
 
 (defn labels [sentence beam-size]
-  (map (fn [st] [(extract-stuff st [:label]) (:sem st)])
+  (map (fn [[parse prob]] [(extract-stuff parse [:label]) (:sem parse) prob])
        (->> (quick-parse sentence beam-size)
-            (map first)
              )))
 
 (defn warm-up [sentence times]

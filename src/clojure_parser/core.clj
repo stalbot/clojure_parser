@@ -407,6 +407,9 @@
   ([label production children features semantics]
    (TreeNode. label production children features semantics)))
 
+(defn term-sym? [sym-str]
+  (not= (first sym-str) \$))
+
 (defn mk-traversable-tree [tree]
   "Takes a tree and makes it zippable. Assumes tree is in form of
   TreeNode heirarchy."
@@ -575,7 +578,7 @@
                             current-node
                             new-entry
                             is-head)]
-        (if (get-in pcfg [new-label :lex-node])
+        (if (or (term-sym? new-label) (get-in pcfg [new-label :lex-node]))
           [[(append-and-go-to-child
               current-state
               (tree-node
@@ -619,11 +622,15 @@
       found-states
       )))
 
-(defn pos-state [lex-state]
+(defn pos-start-state [lex-state]
   "Takes the state at a lex node and does the necessary steps to make it a
-   state ready to traverse as part of infer-possible-states"
-  (let [lex-sem (-> lex-state zp/node :sem)]
-    (-> lex-state zp/up (zp/edit #(assoc % :sem lex-sem)))))
+   state ready to traverse as part of infer-possible-states. Normally this
+   means finding the first $N style node, but not if this was a node directly
+   created with a terminal symbol"
+  (if (:production (zp/node lex-state))
+    lex-state
+    (let [lex-sem (-> lex-state zp/node :sem)]
+      (-> lex-state zp/up (zp/edit #(assoc % :sem lex-sem))))))
 
 (defn infer-possible-states
   "expands into successor states of the current state, yield up to *max-states*
@@ -634,7 +641,7 @@
    this is a form of A* search, if we want to be fancy about it."
   [pcfg current-state beam-size]
   (renormalize-found-states!
-    (loop [frontier (priority-map-gt (pos-state current-state) 1.0)
+    (loop [frontier (priority-map-gt (pos-start-state current-state) 1.0)
            found (transient [])
            best-prob nil]
       (if (or (>= (count found) beam-size)
@@ -643,7 +650,8 @@
         (let [[current-state current-prob] (peek frontier)
               current-node (zp/node current-state)
               remainder (pop frontier)]
-          (if (and (get-in pcfg [(:label current-node) :lex-node])
+          (if (and (or (get-in pcfg [(:label current-node) :lex-node])
+                       (term-sym? (:label current-node)))
                    (-> current-node :children empty?))
             (if (and best-prob (< (/ current-prob best-prob) (min-prob-ratio)))
               found
@@ -846,10 +854,10 @@
   )
 
 (defn update-state-prob-with-lex-node
-  [[state prob] word [features pos syns syn-sem prob-adj]]
+  [state prob word [features pos syns syn-sem prob-adj]]
   (let [node (zp/node state)]
     (if (or (not= (:label node) pos)
-            (not (features-match (-> state zp/node :features) features)))
+          (not (features-match (-> state zp/node :features) features)))
       nil
       (let [[new-sem sem-prob-adj]
             (sem-for-lex-node syns syn-sem (:sem node))]
@@ -864,18 +872,24 @@
         (* prob-adj prob sem-prob-adj)])
       )))
 
+(defn check-state-against-syn-sets [[state prob] synsets-info word]
+  (if (let [label (-> state zp/node :label)]
+        (and (term-sym? label) (= label word)))
+    {state prob}
+    (->>
+      synsets-info
+      (map #(update-state-prob-with-lex-node state prob word %))
+      (filter #(not (nil? %)))
+      (into {})))
+    )
+
+
 (defn update-state-probs-for-word
   [pcfg lexical-lkup states-and-probs word]
   (let [synsets-info (synsets-split-by-function pcfg lexical-lkup word)]
     (->>
       states-and-probs
-      (map
-        (fn [state-prob]
-          (->>
-            synsets-info
-            (map #(update-state-prob-with-lex-node state-prob word %))
-            (filter #(not (nil? %)))
-            (into {}))))
+      (map #(check-state-against-syn-sets % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
       renormalize-found-states!)
     ))
