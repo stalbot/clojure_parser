@@ -3,6 +3,8 @@
             [clojure.data.json :as json]
             [clojure.zip :as zp]))
 
+(import java_utils.EasyPQueue)
+
 (defmacro start-sym [] "$S")
 (defmacro parent-penalty []
   "Many productions have only one possible parent, which means it will have
@@ -13,6 +15,27 @@
 (defn priority-map-gt [& keyvals]
   "More probability is always going to be better"
   (apply priority-map-by > keyvals))
+
+(defn fast-pq [& keyvals]
+  (let [java-pq (new EasyPQueue)]
+    (reduce (fn [java-pq [val sort]] (.add java-pq val sort) java-pq)
+      java-pq
+      (apply array-map keyvals))))
+
+(defn fast-pq-add! [pq val ^Number sort-val]
+  (.add pq val sort-val)
+  pq)
+
+(defn fast-pq-add-all! [pq vals-and-sorts]
+  (reduce
+    (fn [pq [val sort]]
+      (fast-pq-add! pq val sort))
+    pq
+    vals-and-sorts))
+
+(defn fast-pq-pop! [pq]
+  (let [popped (.poll pq)]
+    [[(.getSecond popped) (.getFirst popped)] pq]))
 
 (def pos-to-sym-lkup
   {
@@ -665,15 +688,14 @@
    this is a form of A* search, if we want to be fancy about it."
   [pcfg current-state beam-size]
   (renormalize-found-states!
-    (loop [frontier (priority-map-gt (pos-start-state current-state) 1.0)
+    (loop [frontier (fast-pq (pos-start-state current-state) 1.0)
            found (transient [])
            best-prob nil]
       (if (or (>= (count found) beam-size)
-              (empty? frontier))
+              (.isEmpty frontier))
         found
-        (let [[current-state current-prob] (peek frontier)
-              current-node (zp/node current-state)
-              remainder (pop frontier)]
+        (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)
+              current-node (zp/node current-state)]
           (if (and (or (get-in pcfg [(:label current-node) :lex-node])
                        (term-sym? (:label current-node)))
                    (-> current-node :children empty?))
@@ -684,7 +706,8 @@
                 (conj! found [current-state current-prob])
                 (or best-prob current-prob)))
             (recur
-              (into remainder
+              (fast-pq-add-all!
+                remainder
                 (get-successor-states
                   pcfg
                   current-state
@@ -1017,7 +1040,7 @@
           (map (fn [[k v]] [k (* v prior-prob)]))
           states-with-probs))
       '()
-      (map  ; TODO: pmap!
+      (pmap
         (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
                              prob])
         ; TODO: need we/should we do this (take) here?
