@@ -157,25 +157,25 @@
   ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
         learned (infer-possible-states compiled-pcfg-for-test child (default-beam-size))]
-    (is (= (-> learned keys first plain-tree)
+    (is (= (-> learned first first plain-tree)
            (-> realistic-tnode
                zp/down
                (append-and-go-to-child (tree-node "$N" nil []))
                plain-tree)))
-    (is (approx= (first (vals learned)) 1.0)))
+    (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
         learned (infer-possible-states compiled-pcfg-for-test child 1)]
-    (is (= (-> learned keys first zp/root :children second :production :elements count)
+    (is (= (-> learned first first zp/root :children second :production :elements count)
            1))  ; make sure we got the higher-probability $V production as the only one
-    (is (approx= (first (vals learned)) 1.0)))
+    (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
         learned (infer-possible-states compiled-pcfg-for-test child 2)]
     (is (= (->> learned
-                keys
+                (map first)
                 (map #(-> % zp/root :children second :production :elements count)))
            [1 2]))
-    (is (approx= (first (vals learned)) 0.6))
-    (is (approx= (second (vals learned)) 0.4))
+    (is (approx= (first (map second learned)) 0.6))
+    (is (approx= (second (map second learned)) 0.4))
     ))
 
 (def ambiguous-inferred-state1
@@ -253,19 +253,20 @@
                   compiled-pcfg-for-test
                   compiled-lexicon-for-test
                   (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
-                  "cool")]
+                  "cool")
+        updated (reverse (sort-by second updated))]
     (is (< 0 (count updated)))
-    (is (= (-> updated keys last zp/root (extract-stuff [:label]))
+    (is (= (-> updated last first zp/root (extract-stuff [:label]))
            (-> pre-state-1
                (append-and-go-to-child (tree-node-tst "cool" []))
                zp/root
                (extract-stuff [:label]))))
-    (is (= (-> updated keys first zp/root (extract-stuff [:label]))
+    (is (= (-> updated first first zp/root (extract-stuff [:label]))
            (-> pre-state-2
                (append-and-go-to-child (tree-node-tst "cool" []))
                zp/root
                (extract-stuff [:label]))))
-    (is (= (vals updated) [0.8 0.2]))
+    (is (= (map second updated) [0.8 0.2]))
     ))
 
 (def good-parse-for-eos1
@@ -302,11 +303,11 @@
                   {good-parse-for-eos1 0.45
                    good-parse-for-eos2 0.3
                    bad-parse-for-eos 0.25})]
-    (is (= (map #(-> %1 zp/root (extract-stuff [:label :features]))  (keys updated))
+    (is (= (map #(-> %1 zp/root (extract-stuff [:label :features])) (map first updated))
            (map #(-> %1 zp/root (extract-stuff [:label :features]))
                 [good-parse-for-eos1 good-parse-for-eos2])))
-    (is (approx= (-> updated vals first) 0.6))
-    (is (approx= (->> updated vals (reduce +)) 1.0))
+    (is (approx= (-> updated first second) 0.6))
+    (is (approx= (->> updated (map second) (reduce +)) 1.0))
   ))
 
 (deftest test-reformat-states-as-parses
@@ -407,9 +408,9 @@
                   "chase"
                   )]
     (is (= (count updated) 1))
-    (is (= (first (vals updated)) 1.0))
-    (is (= (-> updated keys first zp/node :features (get :plural)) true))
-    (is (= (-> updated keys first zp/up zp/node :features (get :plural))
+    (is (= (second (first updated)) 1.0))
+    (is (= (-> updated first first zp/node :features (get :plural)) true))
+    (is (= (-> updated first first zp/up zp/node :features (get :plural))
            true))
     ))
 

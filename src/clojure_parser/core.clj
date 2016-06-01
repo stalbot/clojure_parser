@@ -655,15 +655,9 @@
   [found-states]
   (let [found-states (persistent! found-states)
         total (reduce + (map last found-states))]
-    (reduce
-      (fn [sorted-states [state prob]]
-        (if (== prob 0.0)
-          sorted-states
-          (assoc sorted-states state (/ prob total))
-          ))
-      (priority-map-gt)
-      found-states
-      )))
+    (map
+      (fn [[k v]] [k (/ v total)])
+      (filter (fn [[_ v]] (not= v 0.0)) found-states))))
 
 (defn pos-start-state [lex-state]
   "Takes the state at a lex node and does the necessary steps to make it a
@@ -711,8 +705,7 @@
                 (get-successor-states
                   pcfg
                   current-state
-                  current-prob
-                  ))
+                  current-prob))
               found
               best-prob)))
         )
@@ -919,7 +912,6 @@
       (into {})))
     )
 
-
 (defn update-state-probs-for-word
   [pcfg lexical-lkup states-and-probs word]
   (let [synsets-info (synsets-split-by-function pcfg lexical-lkup word)]
@@ -964,8 +956,8 @@
   for some states)."
   [pcfg states-and-probs]
   (renormalize-found-states!
-    (reduce-kv
-      (fn [new-states-and-probs state prob]
+    (reduce
+      (fn [new-states-and-probs [state prob]]
         (if (tree-is-filled state)
           (conj! new-states-and-probs [(add-sems-at-eos pcfg state) prob])
           new-states-and-probs))
@@ -975,8 +967,8 @@
 
 (defn reformat-states-as-parses
   [states-and-probs]
-  (reduce-kv
-    (fn [parses state prob]
+  (reduce
+    (fn [parses [state prob]]
       (assoc parses (zp/root state) prob))
     (priority-map-gt)
     states-and-probs))
@@ -1027,8 +1019,7 @@
     learn-from-parse
     pcfg
     parses-to-probs
-    )
-  )
+    ))
 
 (defn infer-possible-states-mult
   [pcfg current-states beam-size]
