@@ -492,7 +492,7 @@
         operation (pcfg-node-opts-for-child cur-node next-index)
         is-inheriting (:inherit-var operation)
         next-sem (if is-inheriting
-                   (assoc cur-sem :cur-var (:cur-var (:sem cur-node)))
+                   cur-sem
                    (with-new-sem-var cur-sem))
         ]
     (condp = (:op-type operation)
