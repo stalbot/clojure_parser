@@ -531,24 +531,16 @@
   "When moving up a hierarchy, we need to carry the state of the new semantic
    entry we've created up to the parent."
   (let [final-child-sem (-> parent-node :children last :sem)
-        parent-sem (:sem parent-node)
-        new-parent-sem (if parent-sem
-                         (assoc parent-sem
-                           ; TODO: this needs more thought: is this just everything?
-                           ; (and if so, then why not just copy the child sem fully, minus inheritance)
-                           :lambda (:lambda final-child-sem)
-                           :val (:val final-child-sem)
-                           :lex-vals (:lex-vals final-child-sem)
-                           :cur-arg (:cur-arg final-child-sem))
-                         final-child-sem)
+        new-parent-sem final-child-sem
         operation (pcfg-node-opts-for-child
                     parent-node
                     (- (count (:children parent-node)) 1))
-        cur-var (if (:inherit-var operation)
+        inherits? (:inherit-var operation)
+        cur-var (if inherits?
                   (:cur-var final-child-sem)
-                  (:cur-var parent-sem))]
+                  (:cur-var (:sem parent-node)))]
     (if cur-var
-      (assoc new-parent-sem :cur-var cur-var)
+      (if inherits? new-parent-sem (assoc new-parent-sem :cur-var cur-var))
       (with-new-sem-var new-parent-sem))))
 
 (defn append-and-go-to-child
@@ -911,6 +903,7 @@
       (filter #(not (nil? %)))
       (into {})))
     )
+
 
 (defn update-state-probs-for-word
   [pcfg lexical-lkup states-and-probs word]
