@@ -1014,9 +1014,15 @@
     parses-to-probs
     ))
 
+(defn take-sorted [states beam-size]
+  (->> states
+       (sort-by last)
+       reverse
+       (take beam-size)))
+
 (defn infer-possible-states-mult
   [pcfg current-states beam-size]
-  (->>
+  (take-sorted
     (reduce
       (fn [final-states [states-with-probs, prior-prob]]
         (into
@@ -1028,10 +1034,8 @@
         (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
                              prob])
         ; TODO: need we/should we do this (take) here?
-        (take beam-size current-states)))
-    (sort-by last)
-    reverse
-    (take beam-size))
+        (take-sorted current-states beam-size)))
+    beam-size)
   )
 
 (defn parse-and-learn-sentence
