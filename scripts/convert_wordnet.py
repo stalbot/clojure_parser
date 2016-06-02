@@ -225,17 +225,18 @@ def main(target_dir):
     with open('/Users/Steven/projects/english_wordlist.txt') as f:
         all_words = set((l.strip() for l in f.readlines()))
 
-    by_pos = defaultdict(lambda: defaultdict(dict))
+    by_pos = defaultdict(lambda: defaultdict(list))
     for i, s in enumerate(wn.all_synsets()):
-        s_info = transform_synset(s, all_words)
         s_name = s.name()
-        by_pos[s.pos()][s_name[0]][s_name] = s_info
+        by_pos[s.pos()][s_name[0]].append(s)
 
     for pos, s_for_pos in by_pos.items():
         pos_dir = os.path.join(target_dir, pos)
         if not os.path.isdir(pos_dir):
             os.mkdir(pos_dir)
-        for start_letter, synset_infos in s_for_pos.items():
+        for start_letter, synsets in s_for_pos.items():
+            print("Doing letter {} for pos {}".format(start_letter, pos))
+            synset_infos = {s.name(): transform_synset(s, all_words) for s in synsets}
             if start_letter.startswith("."):
                 print("Dot start letter for syn {}".format(list(synset_infos.values())[0]))
                 start_letter = "__"
