@@ -35,7 +35,7 @@
 
 (defn fast-pq-pop! [pq]
   (let [popped (.poll pq)]
-    [[(.getSecond popped) (.getFirst popped)] pq]))
+    (if popped [[(.getSecond popped) (.getFirst popped)] pq])))
 
 (def pos-to-sym-lkup
   {
@@ -419,8 +419,9 @@
   )
 
 ; these are going to be used in inner loops, so bind them in as macros
-(defmacro min-prob-ratio [] 0.001)
+(defmacro min-prob-ratio [] 0.01)
 (defmacro default-beam-size [] 50)
+(defmacro min-absolute-prob [] 0.0001)
 
 (defrecord TreeNode [label production children features sem])
 
@@ -599,13 +600,13 @@
     ))
 
 (defn get-successor-states
-  [pcfg current-state current-prob]
+  [pcfg current-state current-prob possible-word-posses]
   (let [current-node (zp/node current-state)
         num-children (-> current-node :children count)
         production (:production current-node)]
     (if (or (nil? production)
             (= num-children (count (:elements production))))
-      (filter first [[(get-parent-state current-state) current-prob]])
+      [[] (filter first [[(get-parent-state current-state) current-prob]])]
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
             is-head (is-head? current-node num-children)
@@ -614,15 +615,20 @@
                             new-entry
                             is-head)]
         (if (or (term-sym? new-label) (get-in pcfg [new-label :lex-node]))
-          [[(append-and-go-to-child
-              current-state
-              (tree-node
-                new-label
-                nil
-                []
-                next-features
-                (sem-for-next current-node)))
-            current-prob]]
+          (if (or (nil? possible-word-posses)
+                   (contains? possible-word-posses new-label))
+            [[[(append-and-go-to-child
+                 current-state
+                 (tree-node
+                   new-label
+                   nil
+                   []
+                   next-features
+                   (sem-for-next current-node)))
+               current-prob]]
+             []]
+            [[] []]
+            )
           (let [new-productions (get-in pcfg [new-label :productions])
                 prod-total (get-in pcfg [new-label :productions_total])
                 ; handle perverse case when `new-label` has no productions at all
@@ -630,14 +636,15 @@
                 prob-modifier (if prod-total
                                 (* (/ current-prob prod-total) (parent-penalty))
                                 0)]
-            (map
-              #(get-successor-child-state
-                %1
-                current-state
-                new-label
-                next-features
-                prob-modifier)
-              new-productions)
+            [[]
+             (map
+               #(get-successor-child-state
+                 %1
+                 current-state
+                 new-label
+                 next-features
+                 prob-modifier)
+               new-productions)]
             )
       )))
     )
@@ -665,6 +672,15 @@
                                        :sem lex-sem
                                        :features lex-feat))))))
 
+(defn filter-low-prob [found-states-and-probs best-prob]
+  (filter
+    (fn [[_ current-prob]]
+      (not
+        (or
+          (< current-prob (min-absolute-prob))
+          (and best-prob (< (/ current-prob best-prob) (min-prob-ratio))))))
+    found-states-and-probs))
+
 (defn infer-possible-states
   "expands into successor states of the current state, yield up to *max-states*
    or until any further states found would be less than *min-prob-ratio* as
@@ -672,7 +688,7 @@
    which shouldn't happen in practice). Assumes that the active state
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
-  [pcfg current-state beam-size]
+  [pcfg current-state beam-size possible-word-posses]
   (renormalize-found-states!
     (loop [frontier (fast-pq (pos-start-state current-state) 1.0)
            found (transient [])
@@ -680,30 +696,23 @@
       (if (or (>= (count found) beam-size)
               (.isEmpty frontier))
         found
-        (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)
-              current-node (zp/node current-state)]
-          (if (and (or (get-in pcfg [(:label current-node) :lex-node])
-                       (term-sym? (:label current-node)))
-                   (-> current-node :children empty?))
-            (if (and best-prob (< (/ current-prob best-prob) (min-prob-ratio)))
-              found
-              (recur
-                remainder
-                (conj! found [current-state current-prob])
-                (or best-prob current-prob)))
+        (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)]
+          (let [for-found-and-frontier (get-successor-states
+                                           pcfg
+                                           current-state
+                                           current-prob
+                                           possible-word-posses)
+                [for-found for-frontier] (map #(filter-low-prob % best-prob)
+                                              for-found-and-frontier)]
             (recur
-              (fast-pq-add-all!
-                remainder
-                (get-successor-states
-                  pcfg
-                  current-state
-                  current-prob))
-              found
-              best-prob)))
-        )
-      )
-    )
-  )
+              (reduce (fn [remainder [state prob]]
+                        (fast-pq-add! remainder state prob))
+                      remainder
+                      for-frontier)
+              (reduce conj! found for-found)
+              (or best-prob (and (-> for-found empty? not)
+                                 (apply max (map second for-found)))))
+            ))))))
 
 (defn syn-w-counts-for-lem [pcfg [lemma-name lemma-count]]
   (let [lemma-entry (get pcfg lemma-name)
@@ -1020,8 +1029,21 @@
        reverse
        (take beam-size)))
 
+(defn possible-pos-for-word [pcfg lexical-lkup word]
+  ; TODO: compute this at compile time somewhere
+  (conj
+    (->>
+      word
+      (get lexical-lkup)
+      (map #(get pcfg (first %)))
+      (map #(-> % :parents keys first first))
+      (map #(get pcfg %))
+      (map #(-> % :parents keys first first))
+      set)
+    word))
+
 (defn infer-possible-states-mult
-  [pcfg current-states beam-size]
+  [pcfg current-states beam-size word-posses]
   (take-sorted
     (reduce
       (fn [final-states [states-with-probs, prior-prob]]
@@ -1031,7 +1053,11 @@
           states-with-probs))
       '()
       (pmap
-        (fn [[state, prob]] [(infer-possible-states pcfg state beam-size)
+        (fn [[state, prob]] [(infer-possible-states
+                               pcfg
+                               state
+                               beam-size
+                               word-posses)
                              prob])
         ; TODO: need we/should we do this (take) here?
         (take-sorted current-states beam-size)))
@@ -1060,13 +1086,19 @@
           )
         (recur
           (rest sentence)
-          (let [next-possible-states
-                (infer-possible-states-mult pcfg current-states beam-size)]
+          (let [word (first sentence)
+                word-posses (possible-pos-for-word pcfg lexical-lkup word)
+                next-possible-states (infer-possible-states-mult
+                                       pcfg
+                                       current-states
+                                       beam-size
+                                       word-posses)]
+            ;(println (first sentence) (count next-possible-states))
             (update-state-probs-for-word
               pcfg
               lexical-lkup
               next-possible-states
-              (first sentence))))))
+              word)))))
     )
   ))
 

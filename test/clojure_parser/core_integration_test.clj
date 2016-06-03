@@ -84,7 +84,7 @@
              )))
 
 (defn warm-up [sentence times]
-  (map #(count (quick-parse % 50)) (repeat times sentence))
+  (map #(count (quick-parse % 25)) (repeat times sentence))
   )
 
 (deftest some-sentence

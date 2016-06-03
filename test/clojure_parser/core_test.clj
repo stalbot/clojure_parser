@@ -113,13 +113,14 @@
   (let [successors (get-successor-states
                      compiled-pcfg-for-test
                      tnode
-                     1.0)]
-    (is (= (count successors) 2))
-    (is (approx= (-> successors first last) 0.3374999999))
-    (is (approx= (-> successors second last) 0.5625))
+                     1.0
+                     nil)]
+    (is (= (count (second successors)) 2))
+    (is (approx= (-> successors second first last) 0.3374999999))
+    (is (approx= (-> successors second second last) 0.5625))
     (is (=
           (plain-tree (append-and-go-to-child tnode (tree-node-tst "$AA" [])))
-          (-> successors first first plain-tree)
+          (-> successors second first first plain-tree)
           ))
     (is (=
           (plain-tree
@@ -129,7 +130,7 @@
                 "$AA"
                 (get-in compiled-pcfg-for-test ["$AA" :productions 1])
                 [])))
-          (-> successors last first plain-tree)
+          (-> successors second last first plain-tree)
           ))
     ))
 
@@ -142,9 +143,10 @@
         successor (get-successor-states
                     compiled-pcfg-for-test
                     with-feature
-                    1.0)]
-    (is (= (-> successor first first zp/node :features) {:plural true}))
-    (is (= (-> successor (nth 1) first zp/node :features) {:plural true}))
+                    1.0
+                    nil)]
+    (is (= (-> successor second first first zp/node :features) {:plural true}))
+    (is (= (-> successor second second first zp/node :features) {:plural true}))
   ))
 
 (def realistic-tnode
@@ -156,7 +158,7 @@
   ; when it hits min probability, etc.
   ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
-        learned (infer-possible-states compiled-pcfg-for-test child (default-beam-size))]
+        learned (infer-possible-states compiled-pcfg-for-test child (default-beam-size) nil)]
     (is (= (-> learned first first plain-tree)
            (-> realistic-tnode
                zp/down
@@ -164,12 +166,12 @@
                plain-tree)))
     (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
-        learned (infer-possible-states compiled-pcfg-for-test child 1)]
+        learned (infer-possible-states compiled-pcfg-for-test child 1 nil)]
     (is (= (-> learned first first zp/root :children second :production :elements count)
            1))  ; make sure we got the higher-probability $V production as the only one
     (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
-        learned (infer-possible-states compiled-pcfg-for-test child 2)]
+        learned (infer-possible-states compiled-pcfg-for-test child 2 nil)]
     (is (= (->> learned
                 (map first)
                 (map #(-> % zp/root :children second :production :elements count)))
