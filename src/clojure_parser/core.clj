@@ -3,8 +3,6 @@
             [clojure.zip :as zp]
             [clojure-parser.utils :refer :all]))
 
-
-
 ; these are going to be used in inner loops, so bind them in as macros
 (defmacro min-prob-ratio [] 0.01)
 (defmacro default-beam-size [] 50)
@@ -323,6 +321,10 @@
     ))
 
 (defn synsets-split-by-function [pcfg lexical-lkup raw-word]
+  "We want to share states across all synsets found for a word that are
+   functionally equivalent, in this case meaning that have the same POS
+   and the same set of features. ASSUMES that in our current setup,
+   this implies that semantic structure of the synset entry should be the same."
   (let [lemmas-w-counts (get lexical-lkup raw-word)
         synsets-w-counts (map #(syn-w-counts-for-lem pcfg %) lemmas-w-counts)
         total-count (reduce + (map last synsets-w-counts))]
@@ -364,6 +366,11 @@
       :features parent-features)))
 
 (defn sem-for-lex-node [syns entry-sem node-sem]
+  "Update the semantic info for a new lexical entry.
+
+   syns -> map of each synset to probability
+   entry-sem -> the common semantic functional info of the synsets
+   node-sem -> the existing semantics of the parse, to be augmented"
   (let [entry-lambda (:lambda entry-sem)
         entry-lambda (if entry-lambda
                        (assoc-in entry-lambda
