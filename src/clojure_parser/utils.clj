@@ -32,7 +32,8 @@
 
 (defn fast-pq-pop! [pq]
   (let [popped (.poll pq)]
-    (if popped [[(.getSecond popped) (.getFirst popped)] pq])))
+    (if popped [[(.getSecond popped) (.getFirst popped)]
+                pq])))
 
 (def pos-to-sym-lkup
   {

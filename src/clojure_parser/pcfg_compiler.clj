@@ -2,6 +2,10 @@
   (:require [clojure-parser.utils :refer :all]
             [clojure.data.json :as json]))
 
+(defrecord Lambda [form remaining-idxs target-idx])
+
+(defn lambda [form remaining-idxs target-idx]
+  (Lambda. form remaining-idxs target-idx))
 
 (defn parse-raw-json-data [json-str]
   (json/read-str
@@ -256,12 +260,12 @@
   (if (nil? raw-sem)
     {:val syn-name}
     ; TODO: this probably needs to be more general other than just lambdas
-    {:lambda {:form (into [] (repeat (count raw-sem) nil))
-              :remaining-idxs (keep-indexed
-                                #(if (not (re-find #"\#" %2)) %1)
-                                raw-sem)
-              :target-idx (first (keep-indexed #(if (re-find #"\#" %2) %1)
-                                               raw-sem))}
+    {:lambda (lambda (into [] (repeat (count raw-sem) nil))
+                     (keep-indexed
+                       #(if (not (re-find #"\#" %2)) %1)
+                       raw-sem)
+                     (first (keep-indexed #(if (re-find #"\#" %2) %1)
+                                          raw-sem)))
      :val syn-name}
     ))
 

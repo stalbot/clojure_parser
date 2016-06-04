@@ -736,13 +736,13 @@
   (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1}]
          (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions])))))
   (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.01" :sem])
-         {:lambda {:form [nil nil], :remaining-idxs [1], :target-idx 0},
+         {:lambda (lambda [nil nil] [1] 0),
           :val "walk.v.01"}))
   (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.02" :sem])
-         {:lambda {:form [nil nil nil], :remaining-idxs [1 2], :target-idx 0},
+         {:lambda (lambda [nil nil nil] [1 2] 0),
           :val "walk.v.02"}))
   (is (= (get-in compiled-pcfg-test-sems-features ["or.c.01" :sem])
-         {:lambda {:form [nil nil nil], :remaining-idxs [1 2], :target-idx 0},
+         {:lambda (lambda [nil nil nil] [1 2] 0),
           :val "or.c.01"}))
   )
 

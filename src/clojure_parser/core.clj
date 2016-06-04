@@ -51,7 +51,8 @@
   )
 
 (defn resolve-full-lambda [next-sem lamdbda-form]
-  ; first element of lambda form is name
+  "Given a full lambda from resolve-lambda, sub in the relations
+   created by the full lambda to all the relevant sematic variables"
   (reduce
     (fn [next-sem var]
       (update-in next-sem [:val var] #(conj %1 lamdbda-form)))
@@ -59,6 +60,10 @@
     lamdbda-form))
 
 (defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
+  "Given a lambda record, and a new lambda-arg to call the lambda with,
+   along with the index that the arg should be subbed into, 'call' the
+   lambda and add any completed constituents into the semantics of the
+   parse tree if it's full."
   (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
         remaining-idxs (remove #(= % lambda-idx) (:remaining-idxs lambda))]
     (if (empty? remaining-idxs)
@@ -69,6 +74,9 @@
         (assoc subbed-lambda :remaining-idxs remaining-idxs)))))
 
 (defn call-lambda [next-sem cur-node op]
+  "A wrapper around resolve-lambda that can pass in the right info
+   from the context of a partially completed step to the next semantic
+   element while walking the parse tree."
   ; TODO: consider making these symbols the same as arg-map below
   (let [arg-idx (:arg-idx op)
         lambda-idx (:target-idx op)
