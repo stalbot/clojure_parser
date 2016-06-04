@@ -1,6 +1,8 @@
 (ns clojure-parser.core-test
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer :all]
+            [clojure-parser.pcfg-compiler :refer :all]
+            [clojure-parser.utils :refer :all]
             [clojure.zip :as zp]
             [clojure.data.json :as json]
             [clojure.data :refer [diff]]

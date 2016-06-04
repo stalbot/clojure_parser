@@ -1,6 +1,8 @@
 (ns clojure-parser.core-integration-test
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer :all]
+            [clojure-parser.pcfg-compiler :refer :all]
+            [clojure-parser.utils :refer :all]
             [clojure.zip :as zp]
             [clojure.data :refer [diff]]
             ))
