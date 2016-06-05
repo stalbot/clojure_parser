@@ -222,7 +222,7 @@ def main(target_dir):
     if not os.path.isdir(target_dir):
         os.mkdir(target_dir)
 
-    with open('/Users/Steven/projects/english_wordlist.txt') as f:
+    with open('resources/english_wordlist.txt') as f:
         all_words = set((l.strip() for l in f.readlines()))
 
     by_pos = defaultdict(lambda: defaultdict(list))
@@ -245,5 +245,4 @@ def main(target_dir):
 
 
 if __name__ == '__main__':
-    main('/Users/Steven/projects/wordnet_as_json')
-    # main('/tmp/wordnet')
+    main('resources/wordnet_as_json')

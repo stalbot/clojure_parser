@@ -52,7 +52,7 @@
    })
 
 (defn kind-of-realistic-lexicon1 []
-  (load-lex-from-wn-path "/Users/Steven/projects/wordnet_as_json"))
+  (load-lex-from-wn-path "resources/wordnet_as_json"))
 
 (defn pcfg-and-lex-for-test1 []
   (println "Building large lexicon and pcfg, please be patient...")
