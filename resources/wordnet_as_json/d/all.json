@@ -1,0 +1,13 @@
+{
+	"the.d.01": {"pos": "d", "lemmas": {"the": {"name": "the", "count": 500}}},
+    "that.d.01": {"pos": "d",
+                  "lemmas": {"that": {"name": "that", "count": 200, "features": {"plural": false}}},
+                             "those": {"name": "those", "count": 100, "features": {"plural": true}}},
+    "this.d.01": {"pos": "d",
+                  "lemmas": {"this": {"name": "this", "count": 200, "features": {"plural": false}}},
+                             "these": {"name": "these", "count": 100, "features": {"plural": true}}},
+	"a.d.01": {"pos": "d",
+               "features": {"plural": false},
+               "lemmas": {"an": {"name": "an", "count": 100},
+                          "a": {"name": "a", "count": 200}}}
+}

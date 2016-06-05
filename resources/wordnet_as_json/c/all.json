@@ -1,0 +1,4 @@
+{
+	"and.c.01": {"pos": "c", "lemmas": {"and": {"name": "and", "count": 100}}},
+	"or.c.01": {"pos": "c", "lemmas": {"or": {"name": "or", "count": 100}}}
+}

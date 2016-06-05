@@ -11,3 +11,8 @@ pom.xml.asc
 /.nrepl-port
 .hgignore
 .hg/
+resources/wordnet_as_json/a
+resources/wordnet_as_json/n
+resources/wordnet_as_json/r
+resources/wordnet_as_json/s
+resources/wordnet_as_json/v

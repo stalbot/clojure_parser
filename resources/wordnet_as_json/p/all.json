@@ -1,0 +1,11 @@
+{
+	"of.p.01": {"pos": "p", "lemmas": {"of": {"name": "of", "count": 500}}},
+    "in.p.01": {"pos": "p", "lemmas": {"in": {"name": "in", "count": 500}}},
+    "inside.p.01": {"pos": "p", "lemmas": {"inside": {"name": "inside", "count": 100}}},
+    "by.p.01": {"pos": "p", "lemmas": {"by": {"name": "by", "count": 500}}},
+    "to.p.01": {"pos": "p", "lemmas": {"to": {"name": "to", "count": 500}}},
+    "with.p.01": {"pos": "p", "lemmas": {"with": {"name": "with", "count": 500}}},
+    "on.p.01": {"pos": "p", "lemmas": {"on": {"name": "on", "count": 500}}},
+    "off.p.01": {"pos": "p", "lemmas": {"off": {"name": "off", "count": 500}}},
+    "above.p.01": {"pos": "p", "lemmas": {"above": {"name": "above", "count": 500}}}
+}
