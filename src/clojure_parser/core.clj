@@ -395,8 +395,6 @@
                       (map (fn [[name _ count]]
                              [name (/ count total-local-count)])
                            syns-to-counts))
-                ; just any sem: TODO: make the syn-level sems value-agnostic to avoid this hack
-                (-> syns-to-counts first (nth 1) :sem)
                 (/ total-local-count total-count)]))))
     ))
 
@@ -415,7 +413,7 @@
     (assoc parent
       :features parent-features)))
 
-(defn sem-for-lex-node [syns entry-sem node-sem]
+(defn sem-for-lex-node [syns node-sem]
   "Update the semantic info for a new lexical entry.
 
    syns -> map of each synset to probability
@@ -453,9 +451,9 @@
   (into
     (priority-map-gt)
     (for
-      [[features pos syns syn-sem prob]
+      [[features pos syns prob]
        (synsets-split-by-function pcfg lexical-lkup word)]
-      (let [[start-sem _] (sem-for-lex-node syns syn-sem first-sem)
+      (let [[start-sem _] (sem-for-lex-node syns first-sem)
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
          prob]))))
@@ -543,13 +541,13 @@
   )
 
 (defn update-state-prob-with-lex-node
-  [state prob word [features pos syns syn-sem prob-adj]]
+  [state prob word [features pos syns prob-adj]]
   (let [node (zp/node state)]
     (if (or (not= (:label node) pos)
           (not (features-match (-> state zp/node :features) features)))
       nil
       (let [[new-sem sem-prob-adj]
-            (sem-for-lex-node syns syn-sem (:sem node))]
+            (sem-for-lex-node syns (:sem node))]
         [(append-and-go-to-child
            state
            (tree-node
