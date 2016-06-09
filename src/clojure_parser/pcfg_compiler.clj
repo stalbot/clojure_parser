@@ -2,10 +2,13 @@
   (:require [clojure-parser.utils :refer :all]
             [clojure.data.json :as json]))
 
-(defrecord Lambda [form remaining-idxs target-idx])
+(defrecord Lambda [form remaining-idxs target-idx surface-only?])
 
-(defn lambda [form remaining-idxs target-idx]
-  (Lambda. form remaining-idxs target-idx))
+(defn lambda
+  ([form remaining-idxs target-idx]
+    (Lambda. form remaining-idxs target-idx nil))
+  ([form remaining-idxs target-idx surface-only?]
+    (Lambda. form remaining-idxs target-idx (if surface-only? true))))
 
 (defn parse-raw-json-data [json-str]
   (json/read-str
@@ -97,16 +100,30 @@
                      (map-indexed (fn [i j] [j (+ i 1)])
                                   called-args-idxs)))))
 
+(defn lambda-from-raw-sem [raw-sem]
+  (lambda (into [] (repeat (count raw-sem) nil))
+          (keep-indexed
+            #(if (not (re-find #"\#" %2)) %1)
+            raw-sem)
+          (first (keep-indexed #(if (re-find #"\#" %2) %1)
+                               raw-sem))
+          (re-find #"\^" (first raw-sem))))
+
 (defn compile-prod-sem [production]
   (let [raw-sem (or (:sem production) ["&0"])
         operations (into [] (repeat (count (:elements production)) {}))
         with-inherit (map s-idx (filter #(re-find #"\&" %1) raw-sem))
+        with-surface-only (map s-idx (filter #(re-find #"\^" %1) raw-sem))
         local-condition (if (not (re-matches #"\W+\d+" (first raw-sem)))
                           (first raw-sem))
         operations (reduce
                      #(assoc %1 %2 simple-inherit-var)
                      operations
                      with-inherit)
+        operations (reduce
+                     #(assoc-in %1 [%2 :surface-only?] true)
+                     operations
+                     with-surface-only)
         called (if (re-find #"\#" (first raw-sem)) (s-idx (first raw-sem)))
         called-args-idxs (keep-indexed
                            #(if (re-find #"\%" %2) [(s-idx %2) %1])
@@ -116,6 +133,13 @@
                        operations
                        local-condition
                        called-args-idxs)
+                     operations)
+        operations (if called
+                     (-> operations
+                         (assoc-in [called :lambda]
+                                   (lambda-from-raw-sem raw-sem))
+                         (assoc-in [called :op-type] :lambda-declare)
+                         )
                      operations)]
     (reduce
       ; TODO: this NEEDS to be able to handle more than 1 of each kind!
@@ -125,7 +149,8 @@
           (update
             operations
             called
-            #(assoc %1
+            #(assoc %
+              ; allow this to override the :lambda-declare type
               :op-type :pass-arg
               :arg-idx child-idx
               :target-idx form-idx))
@@ -260,30 +285,9 @@
   (if (nil? raw-sem)
     {:val syn-name}
     ; TODO: this probably needs to be more general other than just lambdas
-    {:lambda (lambda (into [] (repeat (count raw-sem) nil))
-                     (keep-indexed
-                       #(if (not (re-find #"\#" %2)) %1)
-                       raw-sem)
-                     (first (keep-indexed #(if (re-find #"\#" %2) %1)
-                                          raw-sem)))
+    {:lambda (lambda-from-raw-sem raw-sem)
      :val syn-name}
     ))
-
-(defn add-sym-sem [pcfg features syn-name pos]
-  (let [features (merge features (get-in pcfg [syn-name :features]))]
-    (loop [sem-mapper (get-in pcfg [:meta :sem-mapper pos])]
-      (if (map? sem-mapper)
-        (recur (get-in
-                 sem-mapper
-                 [:vals (keyword
-                          (str (get features (keyword (:key sem-mapper)))))]
-                 (get-in sem-mapper [:vals :nil])))
-        (assoc-in
-          pcfg
-          [syn-name :sem]
-          (syn-sem-from-pcfg-entry sem-mapper syn-name)
-          )
-        ))))
 
 (defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
   (reduce
@@ -311,7 +315,6 @@
           lexicalizing-pcfg
           (assoc-in [syn-name :productions_total] total)
           (assoc-in [syn-name :features] features)
-          (add-sym-sem features syn-name pos)
           (assoc-in
             [syn-name :productions]
             (map (fn [lemma-entry]

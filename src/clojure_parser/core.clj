@@ -1,7 +1,8 @@
 (ns clojure-parser.core
   (:require [clojure.data.priority-map :refer [priority-map-by]]
             [clojure.zip :as zp]
-            [clojure-parser.utils :refer :all]))
+            [clojure-parser.utils :refer :all]
+            [clojure.set :refer [difference]]))
 
 ; these are going to be used in inner loops, so bind them in as macros
 (defmacro min-prob-ratio [] 0.01)
@@ -37,25 +38,44 @@
   (get productions_lkup (mapv :label (:elements found-production)))
   )
 
-(defn with-new-sem-var [sem]
+(defn with-new-discourse-var [sem]
   (let [sem (or sem {:val {}})
         new-var (keyword (str "v" (count (:val sem))))]
-    (-> sem
-        (assoc :cur-var new-var)
-        (assoc-in [:val new-var] #{}))))
+    (assoc sem :cur-var new-var)))
 
 (defn pcfg-node-opts-for-child [node child-idx]
-  (get-in node [:production :sem child-idx])
-  )
+  (get-in node [:production :sem child-idx]))
+
+(defn is-discourse-var? [var]
+  (= (second (str var)) \v))
 
 (defn resolve-full-lambda [next-sem lamdbda-form]
   "Given a full lambda from resolve-lambda, sub in the relations
-   created by the full lambda to all the relevant sematic variables"
-  (reduce
-    (fn [next-sem var]
-      (update-in next-sem [:val var] #(conj %1 lamdbda-form)))
-    next-sem
-    lamdbda-form))
+   created by the full lambda to all the relevant sematic variables.
+   If it is building a purely surface relation (no :v0 style discourse
+   vars), it associates the new relation it builds with whatever the
+   current discourse var is in the context."
+  (let [grouped (group-by is-discourse-var? lamdbda-form)
+        vars-for-update (get grouped true [(:cur-var next-sem)])
+        vars-in-relations (get grouped false)
+        next-sem (assoc
+                   next-sem
+                   :lex-vals
+                   (reduce #(assoc %1 %2 (get %1 %2))
+                           (:lex-vals next-sem)
+                           vars-in-relations))]
+    (reduce
+      (fn [next-sem var]
+        (let [next-sem (update-in next-sem
+                                  [:val var]
+                                  #(conj (or %1 #{}) lamdbda-form))]
+          ; TODO: double update-in for same path is dumb
+          (update-in
+            next-sem
+            [:val var]
+            #(difference % vars-in-relations))))
+      next-sem
+      vars-for-update)))
 
 (defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
   "Given a lambda record, and a new lambda-arg to call the lambda with,
@@ -71,6 +91,13 @@
         :lambda
         (assoc subbed-lambda :remaining-idxs remaining-idxs)))))
 
+(defn lex-var-for-sem [sem]
+  (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
+    (if (and (contains? (:lex-vals sem) key1)
+             (nil? (get-in sem [:lex-vals key1])))
+      key1
+      (keyword (str "s" (count (:lex-vals sem)))))))
+
 (defn call-lambda [next-sem cur-node op]
   "A wrapper around resolve-lambda that can pass in the right info
    from the context of a partially completed step to the next semantic
@@ -78,8 +105,14 @@
   ; TODO: consider making these symbols the same as arg-map below
   (let [arg-idx (:arg-idx op)
         lambda-idx (:target-idx op)
-        lambda (-> cur-node :children (nth arg-idx) :sem :lambda)]
-    (resolve-lambda next-sem lambda lambda-idx (:cur-var next-sem))))
+        lambda-arg (if (:surface-only? op)
+                     (lex-var-for-sem next-sem)
+                     (:cur-var next-sem))
+        ; in the special case of the first pass up, the :lambda is defined
+        ; on us, not our child. TODO: that sucks, make it all better
+        lambda (or (-> cur-node :children (nth arg-idx) :sem :lambda)
+                   (:lambda (:sem cur-node)))]
+    (resolve-lambda next-sem lambda lambda-idx lambda-arg)))
 
 (defn complete-condition [next-sem cur-node operation]
   ; TODO: this isn't really tested, not sure it's needed
@@ -118,32 +151,54 @@
         is-inheriting (:inherit-var operation)
         next-sem (if is-inheriting
                    cur-sem
-                   (with-new-sem-var cur-sem))
+                   (with-new-discourse-var cur-sem))
         ]
     (condp = (:op-type operation)
       :call-lambda (call-lambda next-sem cur-node operation)
+      :lambda-declare (assoc next-sem :lambda (:lambda operation))
       :pass-arg (assoc next-sem
                   :cur-arg
-                  (get-in children [(:arg-idx operation) :sem :cur-var]))
+                  (get-in children [(:arg-idx operation) :sem :cur-var])
+                  :lambda (:lambda operation))
       :complete-condition (complete-condition next-sem cur-node operation)
       next-sem ; default case
       )))
 
-(defn sem-for-parent [parent-node]
+(defn declare-lambda-on-sem [entry-lambda node-sem lex-sem-var]
+  (let [entry-lambda (if entry-lambda
+                       (assoc-in entry-lambda
+                                 [:form (get entry-lambda :target-idx 0)]
+                                 (if (:surface-only? entry-lambda)
+                                   lex-sem-var
+                                   (:cur-var node-sem))))]
+    (if entry-lambda
+      (assoc node-sem :lambda entry-lambda)
+      node-sem)))
+
+(defn sem-for-parent
   "When moving up a hierarchy, we need to carry the state of the new semantic
    entry we've created up to the parent."
+  [parent-node]
   (let [final-child-sem (-> parent-node :children last :sem)
         new-parent-sem final-child-sem
+        intitial? (nil? (:sem parent-node))
         operation (pcfg-node-opts-for-child
                     parent-node
                     (- (count (:children parent-node)) 1))
+        new-parent-sem (if (and intitial?
+                                (= (:op-type operation) :lambda-declare))
+                         (declare-lambda-on-sem
+                           (:lambda operation)
+                           new-parent-sem
+                           (first (keys (:lex-vals new-parent-sem))))
+                         new-parent-sem)
         inherits? (:inherit-var operation)
         cur-var (if inherits?
                   (:cur-var final-child-sem)
                   (:cur-var (:sem parent-node)))]
     (if cur-var
       (if inherits? new-parent-sem (assoc new-parent-sem :cur-var cur-var))
-      (with-new-sem-var new-parent-sem))))
+      (with-new-discourse-var new-parent-sem))))
 
 (defn get-successor-child-state
   [production current-state new-label inherited-features prob-modifier]
@@ -356,13 +411,8 @@
                  [current-state]
                  {}
                  nil)
-        ; TODO: this is jank. fake the sem on the first pass, rely
-        ; on a later step to clean up  (also maybe not needed anymore?)
-        parent-sem (if (-> current-state :sem nil?)
-                     {:val {:v0 #{parent-sym}}})
         parent-features (get-parent-features parent current-state)]
     (assoc parent
-      :sem parent-sem
       :features parent-features)))
 
 (defn sem-for-lex-node [syns entry-sem node-sem]
@@ -371,26 +421,30 @@
    syns -> map of each synset to probability
    entry-sem -> the common semantic functional info of the synsets
    node-sem -> the existing semantics of the parse, to be augmented"
-  (let [entry-lambda (:lambda entry-sem)
-        entry-lambda (if entry-lambda
-                       (assoc-in entry-lambda
-                                 [:form (get entry-lambda :target-idx 0)]
-                                 (:cur-var node-sem)))
+  (let [entry-lambda (:lambda node-sem)
+        lex-sem-var (lex-var-for-sem node-sem)
+        surface-only-lambda? (and entry-lambda (:surface-only? entry-lambda))
+        node-sem (declare-lambda-on-sem entry-lambda node-sem lex-sem-var)
+        entry-lambda (:lambda node-sem)
         cur-arg (:cur-arg node-sem)
+        node-sem (if (or surface-only-lambda?
+                         ; TODO: part of temp hack to not add the lex-sem-var in
+                         ; when we've already used it in a surface-only? lambda
+                         (contains? (:lex-vals node-sem) lex-sem-var))
+                   node-sem
+                   (update-in
+                     node-sem
+                     [:val (:cur-var node-sem)]
+                     #(conj (or %1 #{}) lex-sem-var)))
         node-sem (if (and cur-arg entry-lambda)
                    (resolve-lambda node-sem entry-lambda 1 cur-arg)
                    node-sem)
-        lex-sem-var (keyword (str "s" (count (:lex-vals node-sem))))
         node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
-    [(update-in
-       node-sem
-       [:val (:cur-var node-sem)]
-       #(conj %1 lex-sem-var)),
-     1.0]  ; TODO: obviously make this a real probability
+    [node-sem, 1.0]  ; TODO: obviously make this a real probability
     ))
 
 (def first-sem
-  {:cur-var :v0, :val {:v0 #{}}})
+  {:cur-var :v0, :val {}})
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
@@ -524,7 +578,7 @@
   (let [synsets-info (synsets-split-by-function pcfg lexical-lkup word)]
     (->>
       states-and-probs
-      (map #(check-state-against-syn-sets % synsets-info word))
+      (pmap #(check-state-against-syn-sets % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
       renormalize-found-states!)
     ))

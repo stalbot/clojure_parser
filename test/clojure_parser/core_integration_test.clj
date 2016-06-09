@@ -22,7 +22,7 @@
                          :sem ["&#1" "%0" "%2"]}]}
    "$NN" {:productions [{:elements [["$N" {:plural false}] "$N"], :count 0.1, :sem ["&0" "&1"]}
                         {:elements ["$N"], :count 0.6}]}
-   "$AP" {:productions [{:elements ["$RP" "$AA"], :count 0.1, :sem ["&1"]}
+   "$AP" {:productions [{:elements ["$RP" "$AA"], :count 0.1, :sem ["^#0" "^%&1"]}
                         {:elements ["$AA"], :count 0.4}
                         {:elements ["$AP" "$C" "$AP"], :count 0.1, :sem ["&0" "&2"]}]}
    "$AA" {:productions [{:elements ["$A" "$AA"], :count 0.3, :sem ["&0" "&1"]}
@@ -32,7 +32,7 @@
    "$VP" {:productions [{:elements ["$VP" "$PP"] :count 0.75, :sem ["#1" "&%0"], :head 0}
                         {:elements ["$VV"] :count 0.75}
                         {:elements ["$VV" "$RP"] :count 0.25, :sem ["&0" "&1"], :head 0}]}
-   "$PP" {:productions [{:elements ["$P" "$DP"] :count 1.0 :sem ["&#0" "@0" "%1"]}]}
+   "$PP" {:productions [{:elements ["$P" "$DP"] :count 1.0 :sem ["&^#0" "@0" "%1"]}]}
    "$VV" {:productions [{:elements [["$V" {:trans true}] "$DP"],
                          :count 0.4,
                          :sem ["#&0" "@0" "%1"],
@@ -43,12 +43,6 @@
                         {:elements [["$V" {:trans "ditrans"}] "$DP" "$DP"],
                          :sem ["&#0" "@0" "%1" "%2"]
                          :count 0.1}]} ; TODO: ditrans with to!
-   :meta {:sem-mapper {"$V" {:key "trans", :vals {:true ["#&0" "@0" "%1"],
-                                                  :nil ["&#0" "@0"],
-                                                  :ditrans ["&#0" "@0" "%1" "%2"]}},
-                       "$C" ["&#1" "%0" "%2"],
-                       "$P" ["&#0" "@0" "%1"]
-                       }}
    })
 
 (defn kind-of-realistic-lexicon1 []

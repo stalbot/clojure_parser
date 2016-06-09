@@ -641,7 +641,7 @@
               "el1"
               {:sem [{} {} {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]}
               [{:sem {:cur-var :v3}}
-               {:sem {:val {:v0 ["stuff"], :v1 [], :v2 [], :v3 []},
+               {:sem {:val {:v0 #{"stuff"}, :v1 #{}, :v2 #{}, :v3 #{}},
                       :cur-var :v3,
                       :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
               {}
@@ -662,7 +662,7 @@
          (get-in example-parent-tree-node1 [:children 1 :sem :val])))
   (let [next (sem-for-next tree-node-with-lambda)]
     (is (= (:lambda next) nil))
-    (is (= (-> next :val :v0) ["stuff", ["a_verb" :v0 :v4]]))
+    (is (= (-> next :val :v0) #{"stuff", ["a_verb" :v0 :v4]}))
     (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))
     )
   )
@@ -673,9 +673,12 @@
          :isolate_features ["plural" "person"]}
    "$NP" {:productions [{:elements ["$N" "$N"], :count 0.3, :sem ["&0" "&1"]}
                         {:elements ["$N"], :count 0.6}
+                        {:elements ["$NP" "$PP"], :count 0.2, :sem ["#1" "&%0"], :head 0}
+                        {:elements ["$AP" "$N"], :count 0.4, :sem ["&0" "&1"]}
                         {:elements ["$NP" "$C" "$NP"],
                          :count 0.1,
                          :sem ["&#1" "%0" "%2"]}]}
+   "$AP" {:productions [{:elements ["$R" "$A"], :sem ["^#&0" "^&%1"]}]}
    "$VP" {:productions [{:elements [["$V" {:trans true}] "$NP"],
                          :count 0.4,
                          :sem ["#&0" "@0" "%1"],
@@ -683,9 +686,7 @@
                         {:elements [["$V" {:trans false}]],
                          :sem ["&#0" "@0"]
                          :count 0.6}]}
-   :meta {:sem-mapper {"$V" {:key "trans", :vals {:true ["#&0" "@0" "%1"],
-                                                  :nil ["&#0" "@0"]}},
-                       "$C" ["&#1" "%0" "%2"]}}
+   "$PP" {:productions [{:elements ["$P" "$NP"] :count 1.0 :sem ["^&#0" "@0" "%1"]}]}
    })
 
 (def lexicon-for-testing-features-and-sems-in-prods
@@ -708,6 +709,9 @@
    "cool.n.01" {:pos "n" :lemmas [{:name "cool" :count 1}]}
    "or.c.01" {:pos "c" :lemmas [{:name "or" :count 1}]}
    "and.c.01" {:pos "c" :lemmas [{:name "and" :count 1}]}
+   "on.p.01" {:pos "p" :lemmas [{:name "on" :count 1}]}
+   "very.r.01" {:pos "r" :lemmas [{:name "very" :count 1}]}
+   "red.a.01" {:pos "a" :lemmas [{:name "red" :count 1}]}
    })
 
 (def compiled-lex-test-sems-features
@@ -723,27 +727,36 @@
     [(:val sem) (:lex-vals sem)]))
 
 (deftest test-pcfg-sem-formatting
-  (is (= (set [[{:inherit-var true}]
-               [{:inherit-var true} {:inherit-var true}]
+  (is (= (set [[{:inherit-var true}]  ; -> $N
+               [{:inherit-var true} {:inherit-var true}]  ; -> $N $N
+               [{:inherit-var true} {:inherit-var true}]  ; -> $AP $N
+               ; -> $NP $PP
+               [{:inherit-var true}
+                {:op-type :pass-arg, :arg-idx 0, :target-idx 1, :lambda (lambda [nil nil] [1] 0)}]
+               ;  -> $NP $C $NP
                [{}
-                {:op-type :pass-arg, :inherit-var true, :arg-idx 0, :target-idx 1}
+                {:op-type :pass-arg,
+                 :inherit-var true,
+                 :arg-idx 0,
+                 :target-idx 1,
+                 :lambda (lambda [nil nil nil] [1 2] 0)
+                 }
                 {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]])
          (set (map :sem (get-in compiled-pcfg-test-sems-features ["$NP" :productions])))))
-  (is (= (set [[{:inherit-var true}]
-               [{:inherit-var true}
+  (is (= (set [[{:inherit-var true, :lambda (lambda [nil nil] [1] 0), :op-type :lambda-declare}]
+               [{:inherit-var true,
+                 :lambda (lambda [nil nil nil] [1 2] 0)
+                 :op-type :lambda-declare}
                 {:op-type :call-lambda, :arg-idx 0, :target-idx 2}]])
          (set (map :sem (get-in compiled-pcfg-test-sems-features ["$VP" :productions])))))
-  (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1}]
+  (is (= [{} {:inherit-var true, :op-type :pass-arg, :arg-idx 0, :target-idx 1, :lambda (lambda [nil nil] [1] 0)}]
          (first (map :sem (get-in compiled-pcfg-test-sems-features ["$S" :productions])))))
-  (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.01" :sem])
-         {:lambda (lambda [nil nil] [1] 0),
-          :val "walk.v.01"}))
-  (is (= (get-in compiled-pcfg-test-sems-features ["walk.v.02" :sem])
-         {:lambda (lambda [nil nil nil] [1 2] 0),
-          :val "walk.v.02"}))
-  (is (= (get-in compiled-pcfg-test-sems-features ["or.c.01" :sem])
-         {:lambda (lambda [nil nil nil] [1 2] 0),
-          :val "or.c.01"}))
+  (is (= [{:inherit-var true
+           :surface-only? true
+           :lambda (lambda [nil nil] [1] 0 true)
+           :op-type :lambda-declare}
+          {:inherit-var true, :surface-only? true, :op-type :call-lambda, :arg-idx 0, :target-idx 1}]
+         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$AP" :productions])))))
   )
 
 (deftest test-parse-with-sems
@@ -792,6 +805,27 @@
             compiled-pcfg-test-sems-features
             compiled-lex-test-sems-features
             '("person" "talk")))))
+  (is (=
+        [{:v0 #{:s0 [:v1 :v0 :v2]},
+          :v1 #{:s1 [:v1 :v0 :v2]},
+          :v2 #{[:s3 :v2 :v3] [:v1 :v0 :v2] :s2},
+          :v3 #{[:s3 :v2 :v3] :s4}}
+         {:s0 {"person.n.01" 1.0}, :s1 {"walk.v.02" 1.0},
+          :s2 {"face.n.01" 1.0}, :s3 {"on.p.01" 1.0}, :s4 {"cool.n.01" 1.0}}]
+        (extract-first-sem-vals-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("person" "walk" "face" "on" "cool")))))
+  (is (=
+        [{:v0 #{[:v1 :v0] [:s0 :s1] :s2}, :v1 #{[:v1 :v0] :s3}}
+         {:s0 {"very.r.01" 1.0}, :s1 {"red.a.01" 1.0}, :s2 {"face.n.01" 1.0},
+          :s3 {"talk.v.01" 0.75, "talk.v.03" 0.25}}]
+        (extract-first-sem-vals-from-parse
+          (parse-and-learn-sentence
+            compiled-pcfg-test-sems-features
+            compiled-lex-test-sems-features
+            '("very" "red" "face" "talk")))))
   )
 
 (def lexicon-with-sem-net
