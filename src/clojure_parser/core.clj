@@ -9,6 +9,8 @@
 (defmacro default-beam-size [] 50)
 (defmacro min-absolute-prob [] 0.0001)
 
+(set! *warn-on-reflection* true)
+
 (defrecord TreeNode [label production children features sem])
 
 (defn tree-node
@@ -232,19 +234,20 @@
            (= (- (count (:elements (:production current-node))) 1)
               index)))))
 
-(defn get-parent-features [parent-node cur-node]
+(defn get-parent-features [pcfg parent-node cur-node]
   (if (is-head? parent-node (- (count (:children parent-node)) 1))
     (reduce
       #(dissoc %1 %2)
       (:features cur-node)
-      (:isolate_features parent-node))
+      (:isolate_features (get pcfg (:label parent-node))))
     (:features parent-node)))
 
-(defn get-parent-state [current-state]
+(defn get-parent-state [pcfg current-state]
   (let [parent (zp/up current-state)]
     (and parent (zp/edit parent assoc
                                   :sem (-> parent zp/node sem-for-parent)
                                   :features (get-parent-features
+                                              pcfg
                                               (zp/node parent)
                                               (zp/node current-state))
                          ))
@@ -257,7 +260,8 @@
         production (:production current-node)]
     (if (or (nil? production)
             (= num-children (count (:elements production))))
-      [[] (filter first [[(get-parent-state current-state) current-prob]])]
+      [[] (filter first [[(get-parent-state pcfg current-state)
+                          current-prob]])]
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
             is-head (is-head? current-node num-children)
@@ -345,7 +349,7 @@
            found (transient [])
            best-prob nil]
       (if (or (>= (count found) beam-size)
-              (.isEmpty frontier))
+              (fast-pq-empty? frontier))
         found
         (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)]
           (let [for-found-and-frontier (get-successor-states
@@ -402,14 +406,14 @@
   "Creates the next parent of the current state in the hierarchy.
    E.g. $AP -> $RP $A production and a current state of $RP,
    will return a new parent with the $AP, containing that $RP node"
-  [current-state parent-sym production]
+  [pcfg current-state parent-sym production]
   (let [parent (tree-node
                  parent-sym
                  production
                  [current-state]
                  {}
                  nil)
-        parent-features (get-parent-features parent current-state)]
+        parent-features (get-parent-features pcfg parent current-state)]
     (assoc parent
       :features parent-features)))
 
@@ -512,12 +516,12 @@
                     [frontier
                      (conj!
                        found
-                       [(make-next-initial-state current-state parent-sym prod)
+                       [(make-next-initial-state pcfg current-state parent-sym prod)
                         (* prob current-prob)])]
                   :else
                      [(assoc
                         frontier
-                        (make-next-initial-state current-state parent-sym prod)
+                        (make-next-initial-state pcfg current-state parent-sym prod)
                         (* prob current-prob (parent-penalty)))
                       found]
                   ))

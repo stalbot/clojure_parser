@@ -1,8 +1,11 @@
 (ns clojure-parser.utils
   (:require [clojure.data.priority-map :refer [priority-map-by]]
-            [clojure.zip :as zp]))
+            [clojure.zip :as zp])
+  (:import (java_utils EasyPQueue$SortableObject)))
 
 (import java_utils.EasyPQueue)
+
+(set! *warn-on-reflection* true)
 
 (defmacro start-sym [] "$S")
 (defmacro parent-penalty []
@@ -20,20 +23,25 @@
   (let [with-child (zp/append-child current-state child)]
     (-> with-child zp/down zp/rightmost)))
 
-(defn fast-pq [& keyvals]
-  (let [java-pq (new EasyPQueue)]
-    (reduce (fn [java-pq [val sort]] (.add java-pq val sort) java-pq)
-            java-pq
-            (apply array-map keyvals))))
-
-(defn fast-pq-add! [pq val ^Number sort-val]
+(defn fast-pq-add! [^EasyPQueue pq val ^Number sort-val]
   (.add pq val sort-val)
   pq)
 
-(defn fast-pq-pop! [pq]
+(defn fast-pq [& keyvals]
+  (let [^EasyPQueue java-pq (new EasyPQueue)]
+    (reduce (fn [java-pq [val sort]] (fast-pq-add! java-pq val sort) java-pq)
+            java-pq
+            (apply array-map keyvals))))
+
+(defn fast-pq-empty? [^EasyPQueue pq]
+  (.isEmpty pq))
+
+(defn fast-pq-get-from-popped [^EasyPQueue$SortableObject popped]
+  [(.getSecond popped) (.getFirst popped)])
+
+(defn fast-pq-pop! [^EasyPQueue pq]
   (let [popped (.poll pq)]
-    (if popped [[(.getSecond popped) (.getFirst popped)]
-                pq])))
+    (if popped [(fast-pq-get-from-popped popped) pq])))
 
 (def pos-to-sym-lkup
   {
