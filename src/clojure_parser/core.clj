@@ -28,7 +28,7 @@
   TreeNode heirarchy."
   (zp/zipper
     #(-> %1 :children nil? not)
-    #(-> %1 :children seq)
+    #(-> %1 :children)
     #(assoc %1 :children %2)
     tree))
 
@@ -229,7 +229,8 @@
 
 (defn is-head? [current-node index]
   (let [head-index (:head (:production current-node))]
-    (or (= head-index index)
+    (or
+      (= head-index index)
       (and (nil? head-index)
            (= (- (count (:elements (:production current-node))) 1)
               index)))))
@@ -260,8 +261,8 @@
         production (:production current-node)]
     (if (or (nil? production)
             (= num-children (count (:elements production))))
-      [[] (filter first [[(get-parent-state pcfg current-state)
-                          current-prob]])]
+      (let [parent-state (get-parent-state pcfg current-state)]
+        (if parent-state [[] [[parent-state current-prob]]] [[] []]))
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
             is-head (is-head? current-node num-children)
@@ -352,21 +353,20 @@
               (fast-pq-empty? frontier))
         found
         (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)]
-          (let [for-found-and-frontier (get-successor-states
+          (let [[for-found for-frontier] (get-successor-states
                                            pcfg
                                            current-state
                                            current-prob
                                            possible-word-posses)
-                [for-found for-frontier] (map #(filter-low-prob % best-prob)
-                                              for-found-and-frontier)]
+                for-found (filter-low-prob for-found best-prob)
+                for-frontier (filter-low-prob for-frontier best-prob)]
             (recur
-              (reduce (fn [remainder [state prob]]
-                        (fast-pq-add! remainder state prob))
+              (reduce fast-pq-add!
                       remainder
                       for-frontier)
               (reduce conj! found for-found)
               (or best-prob (and (-> for-found empty? not)
-                                 (apply max (map second for-found)))))
+                                 (reduce max (map second for-found)))))
             ))))))
 
 (defn syn-w-counts-for-lem [pcfg [lemma-name lemma-count]]

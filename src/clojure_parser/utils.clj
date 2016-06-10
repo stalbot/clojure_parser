@@ -23,13 +23,13 @@
   (let [with-child (zp/append-child current-state child)]
     (-> with-child zp/down zp/rightmost)))
 
-(defn fast-pq-add! [^EasyPQueue pq val ^Number sort-val]
+(defn fast-pq-add! [^EasyPQueue pq [val ^Number sort-val]]
   (.add pq val sort-val)
   pq)
 
 (defn fast-pq [& keyvals]
   (let [^EasyPQueue java-pq (new EasyPQueue)]
-    (reduce (fn [java-pq [val sort]] (fast-pq-add! java-pq val sort) java-pq)
+    (reduce (fn [java-pq val-sort] (fast-pq-add! java-pq val-sort) java-pq)
             java-pq
             (apply array-map keyvals))))
 
