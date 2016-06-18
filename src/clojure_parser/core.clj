@@ -69,14 +69,11 @@
                            vars-in-relations))]
     (reduce
       (fn [next-sem var]
-        (let [next-sem (update-in next-sem
-                                  [:val var]
-                                  #(conj (or %1 #{}) lamdbda-form))]
-          ; TODO: double update-in for same path is dumb
-          (update-in
-            next-sem
-            [:val var]
-            #(difference % vars-in-relations))))
+        (update-in
+          next-sem
+          [:val var]
+          #(difference (conj (or %1 #{}) lamdbda-form)
+                       vars-in-relations)))
       next-sem
       vars-for-update)))
 
