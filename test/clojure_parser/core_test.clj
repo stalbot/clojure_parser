@@ -382,6 +382,21 @@
     )
   )
 
+; this is pretty well tested by its wrapper, parse-and-learn-sentence.
+; mostly a sanity check that the interface doesn't degrade/that we get more
+; parses than we would if we were enforcing complete sentences
+(deftest test-parse-sentence-fragment
+  (is (= (count (parse-sentence-fragment compiled-pcfg-for-test
+                                         compiled-lexicon-for-test
+                                         ["cool" "face"]
+                                         40))
+         4))
+  (is (> (count (parse-sentence-fragment compiled-pcfg-for-test
+                                         compiled-lexicon-for-test
+                                         ["cool"]
+                                         40))
+         0)))
+
 (def lexicon-for-test-with-better-features
   (assoc-in lexicon-for-test ["chase.v.01" :lemmas 0 :features :plural] true))
 

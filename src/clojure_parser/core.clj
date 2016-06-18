@@ -727,40 +727,42 @@
     beam-size)
   )
 
+(defn parse-sentence-fragment [pcfg lexical-lkup fragment beam-size]
+  (loop [current-states (infer-initial-possible-states
+                          pcfg
+                          lexical-lkup
+                          (first fragment)
+                          beam-size)
+         fragment (rest fragment)]
+    (if (empty? fragment)
+      current-states
+      (recur
+        (let [word (first fragment)
+              word-posses (possible-pos-for-word pcfg lexical-lkup word)
+              next-possible-states (infer-possible-states-mult
+                                     pcfg
+                                     current-states
+                                     beam-size
+                                     word-posses)]
+          (update-state-probs-for-word
+            pcfg
+            lexical-lkup
+            next-possible-states
+            word))
+        (rest fragment)))))
+
 (defn parse-and-learn-sentence
   ([pcfg lexical-lkup sentence beam-size]
    (parse-and-learn-sentence pcfg lexical-lkup sentence beam-size true))
   ([pcfg lexical-lkup sentence]
    (parse-and-learn-sentence pcfg lexical-lkup sentence (default-beam-size) true))
   ([pcfg lexical-lkup sentence beam-size learn]
-  (let [starting-states (infer-initial-possible-states
-                          pcfg
-                          lexical-lkup
-                          (first sentence)
-                          beam-size)]
-    (loop [sentence (rest sentence)
-           current-states starting-states]
-      (if (empty? sentence)
-        (let [parses
-              (reformat-states-as-parses
-                (update-state-probs-for-eos pcfg current-states))
-              pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
-          [pcfg parses]
-          )
-        (recur
-          (rest sentence)
-          (let [word (first sentence)
-                word-posses (possible-pos-for-word pcfg lexical-lkup word)
-                next-possible-states (infer-possible-states-mult
-                                       pcfg
-                                       current-states
-                                       beam-size
-                                       word-posses)]
-            (update-state-probs-for-word
-              pcfg
-              lexical-lkup
-              next-possible-states
-              word)))))
-    )
-  ))
+   (let [final-states (parse-sentence-fragment
+                        pcfg lexical-lkup sentence beam-size)
+         parses (reformat-states-as-parses
+                  (update-state-probs-for-eos pcfg final-states))
+         pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
+     [pcfg parses]
+     )))
+
 
