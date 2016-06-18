@@ -1,0 +1,23 @@
+{
+    "i.n.pro": {"pos": "n", "lemmas": {
+        "i": {"name": "i", "count": 500, "features": {"plural": false, "syntax": "subj", "person": 1}},
+        "me": {"name": "me", "count": 500, "features": {"plural": false, "syntax": "obj", "person": 1}}
+    }},
+    "you.n.pro": {"pos": "n", "lemmas": {
+        "you": {"name": "you", "count": 500, "features": {"person": 2}}
+    }},
+    "he.n.pro": {"pos": "n", "lemmas": {
+        "him": {"name": "him", "count": 500, "features": {"plural": false, "syntax": "obj", "gender": "m", "person": 3}},
+        "her": {"name": "her", "count": 500, "features": {"plural": false, "syntax": "obj", "gender": "f", "person": 3}},
+        "he": {"name": "he", "count": 500, "features": {"plural": false, "syntax": "subj", "gender": "m", "person": 3}},
+        "she": {"name": "she", "count": 500, "features": {"plural": false, "syntax": "subj", "gender": "f", "person": 1}}
+    }},
+    "we.n.pro": {"pos": "n", "lemmas": {
+        "we": {"name": "we", "count": 500, "features": {"plural": true, "syntax": "subj", "person": 1}},
+        "us": {"name": "us", "count": 500, "features": {"plural": true, "syntax": "obj", "person": 1}}
+    }},
+    "they.n.pro": {"pos": "n", "lemmas": {
+        "they": {"name": "they", "count": 500, "features": {"plural": true, "syntax": "subj", "person": 3}},
+        "them": {"name": "them", "count": 500, "features": {"plural": true, "syntax": "obj", "person": 3}}
+    }}
+}
