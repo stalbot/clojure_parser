@@ -2,6 +2,7 @@ from collections import defaultdict
 import json
 import os
 import re
+import sys
 
 from nltk.corpus import wordnet as wn
 from nltk.corpus.reader.wordnet import VERB_FRAME_STRINGS
@@ -119,7 +120,7 @@ ENDINGS_ALTERNATIVES = {
 }
 
 DEFAULT_FEAUTRES_BY_POS = {
-    'v': {'person': 3, 'tense': 'present', 'plural': True},
+    'v': {'tense': 'present', 'plural': True},
     'n': {'person': 3, 'plural': False},
     'r': {},
     'a': {}
@@ -139,6 +140,14 @@ ENDINGS_FEATURES_BY_POS = {
         'er': {'type': 'comparative'},
     },
     'r': {},
+}
+
+SPECIAL_CONJUCATIONS = {
+    'be': {
+        'am': {'person': 1, 'plural': False},
+        'are': {'plural': True},
+        'is': {'person': 3, 'plural': False}
+    }
 }
 
 ENDINGS_FEATURES_BY_POS['s'] = ENDINGS_FEATURES_BY_POS['a']
@@ -209,8 +218,18 @@ def transform_synset(synset, all_words):
                 lemma_info[attr] = _transform(data)
         lemma_info['features'] = DEFAULT_FEAUTRES_BY_POS[synset.pos()]
         info['lemmas'][lemma_info['name']] = lemma_info
-        for name, lemma_info in find_alt_stems(synset, lemma_info, all_words):
-            info['lemmas'][name] = lemma_info
+        for name, alt_lemm_info in find_alt_stems(synset, lemma_info, all_words):
+            info['lemmas'][name] = alt_lemm_info
+        special_conjucations = SPECIAL_CONJUCATIONS.get(lemma_info['name'])
+        if special_conjucations and synset.pos() == 'v':
+            for name, extra_features in special_conjucations.items():
+                moar_lemma_info = lemma_info.copy()
+                moar_lemma_info['name'] = name
+                moar_lemma_info['features'] = moar_lemma_info['features'].copy()
+                moar_lemma_info['features'].update(extra_features)
+                info['lemmas'][name] = moar_lemma_info
+
+
     # lemmas
     # name
     # pos
@@ -218,12 +237,14 @@ def transform_synset(synset, all_words):
     return info
 
 
-def main(target_dir):
+def main(target_dir, pos_letters_only=''):
     if not os.path.isdir(target_dir):
         os.mkdir(target_dir)
 
     with open('resources/english_wordlist.txt') as f:
         all_words = set((l.strip() for l in f.readlines()))
+
+    pos_letters_only = set(tuple(pl.split(',')) for pl in pos_letters_only.split(':'))
 
     by_pos = defaultdict(lambda: defaultdict(list))
     for i, s in enumerate(wn.all_synsets()):
@@ -235,6 +256,9 @@ def main(target_dir):
         if not os.path.isdir(pos_dir):
             os.mkdir(pos_dir)
         for start_letter, synsets in s_for_pos.items():
+            if pos_letters_only and (pos, start_letter) not in pos_letters_only:
+                continue
+
             print("Doing letter {} for pos {}".format(start_letter, pos))
             synset_infos = {s.name(): transform_synset(s, all_words) for s in synsets}
             if start_letter.startswith("."):
@@ -245,4 +269,4 @@ def main(target_dir):
 
 
 if __name__ == '__main__':
-    main('resources/wordnet_as_json')
+    main('resources/wordnet_as_json', sys.argv[1] if len(sys.argv) > 1 else '')
