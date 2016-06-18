@@ -13,7 +13,7 @@
 (defn parse-raw-json-data [json-str]
   (json/read-str
     json-str
-    :key-fn #(if (re-matches #"(?:\$.*|.*\.\w.\d+)" %1) %1 (keyword %1))))
+    :key-fn #(if (re-matches #"(?:\$.*|.*\.\w\.\S+)" %1) %1 (keyword %1))))
 
 (defn format-raw-lex-data [lex-data]
   (persistent!
