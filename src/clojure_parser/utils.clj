@@ -43,6 +43,9 @@
   (let [popped (.poll pq)]
     (if popped [(fast-pq-get-from-popped popped) pq])))
 
+(defn fast-mult [^double a, ^double b] (* a b))
+(defn fast-div [^double a, ^double b] (/ a b))
+
 (def pos-to-sym-lkup
   {
    "n" "$N"
