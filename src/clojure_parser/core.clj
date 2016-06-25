@@ -554,7 +554,7 @@
     [state, ^double prob, word, [features, pos, syns, ^double prob-adj]]
     (let [node (zp/node state)]
       (if (or (not= (:label node) pos)
-              (not (features-match (-> state zp/node :features) features)))
+              (not (features-match (:features node) features)))
         nil
         (let [[new-sem, ^double sem-prob-adj]
               (sem-for-lex-node syns (:sem node))]
@@ -752,20 +752,21 @@
                                  (take 500)
                                  (map (fn [x]
                                         [x (->> x second vals (reduce +))]))
-                                 (sort-by second))
+                                 (sort-by second)
+                                 reverse)
         ^double total-prob (reduce + (map second possible-word-lkups))]
     (first (reduce
       (fn [[found, ^double best-prob, ^long best-prob-misses]
            [word, ^double prob]]
         (let [found (assoc found word prob)]
           (if (< prob best-prob)
-            (if (>= best-prob-misses 10)
+            (if (>= best-prob-misses 25)
               (reduced [found best-prob best-prob-misses])
               [found best-prob (+ 1 best-prob-misses)])
             [found prob 0]))
         )
       [(priority-map-gt) 0.0 0]
-      (map
+      (pmap
         (fn [[[word lkup-entry], ^double prior-prob]]
           (let [split-by-syn (synsets-split-by-function' pcfg lkup-entry)
                 adj-prob (/ prior-prob total-prob)]
@@ -773,11 +774,15 @@
              (->>
                next-possible-states
                (mapcat
-                 (fn [state]
-                   (map #(update-word-prob-with-lex-info state adj-prob word %)
+                 (fn [[state, ^double state-prob]]
+                   (map #(update-word-prob-with-lex-info
+                          state
+                          (* state-prob adj-prob)
+                          word
+                          %)
                       split-by-syn)))
-               (map second)
                (filter #(-> %))
+               (map second)
                (reduce +))
              ]))
         possible-word-lkups)))
