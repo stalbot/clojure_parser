@@ -875,3 +875,11 @@
   (is (= (parse-raw-json-data
            (json/write-str pcfg-with-features-and-sems-in-prods))
          pcfg-with-features-and-sems-in-prods)))
+
+(deftest test-autocomplete-parse
+  (is (=
+        (autocomplete-parse
+          compiled-pcfg-for-test compiled-lexicon-for-test
+          (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
+          "co"))
+      "blah"))

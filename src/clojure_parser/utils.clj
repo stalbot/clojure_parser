@@ -1,6 +1,7 @@
 (ns clojure-parser.utils
   (:require [clojure.data.priority-map :refer [priority-map-by]]
-            [clojure.zip :as zp])
+            [clojure.zip :as zp]
+            [clojure.string :as string])
   (:import (java_utils EasyPQueue$SortableObject)))
 
 (import java_utils.EasyPQueue)
@@ -45,6 +46,14 @@
 
 (defn fast-mult [^double a, ^double b] (* a b))
 (defn fast-div [^double a, ^double b] (/ a b))
+
+(defn epoch-now [] (System/currentTimeMillis))
+
+(defn upper-str-bound [str-to-bound]
+  (string/replace
+    str-to-bound
+    #".$"
+    (str (char (+ 1 (int (last str-to-bound)))))))
 
 (def pos-to-sym-lkup
   {

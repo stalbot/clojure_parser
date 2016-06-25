@@ -241,7 +241,7 @@
         lkup
         (:lemmas node)
         ))
-    {}
+    (sorted-map)
     lexicon
     ))
 

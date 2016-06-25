@@ -381,13 +381,12 @@
      lemma-count]
     ))
 
-(defn synsets-split-by-function [pcfg lexical-lkup raw-word]
+(defn synsets-split-by-function' [pcfg lemmas-w-counts]
   "We want to share states across all synsets found for a word that are
    functionally equivalent, in this case meaning that have the same POS
    and the same set of features. ASSUMES that in our current setup,
    this implies that semantic structure of the synset entry should be the same."
-  (let [lemmas-w-counts (get lexical-lkup raw-word)
-        synsets-w-counts (map #(syn-w-counts-for-lem pcfg %) lemmas-w-counts)
+  (let [synsets-w-counts (map #(syn-w-counts-for-lem pcfg %) lemmas-w-counts)
         ^double total-count (reduce + (map last synsets-w-counts))]
     (->>
       synsets-w-counts
@@ -403,6 +402,10 @@
                            syns-to-counts))
                 (/ total-local-count total-count)]))))
     ))
+
+(defn synsets-split-by-function [pcfg lexical-lkup raw-word]
+  (let [lemmas-w-counts (get lexical-lkup raw-word)]
+    (synsets-split-by-function' pcfg lemmas-w-counts)))
 
 (defn make-next-initial-state
   "Creates the next parent of the current state in the hierarchy.
@@ -546,24 +549,33 @@
     features1)
   )
 
-(defn update-state-prob-with-lex-node
-  [state, ^double prob, word [features, pos, syns, ^double prob-adj]]
-  (let [node (zp/node state)]
-    (if (or (not= (:label node) pos)
-          (not (features-match (-> state zp/node :features) features)))
-      nil
-      (let [[new-sem, ^double sem-prob-adj]
-            (sem-for-lex-node syns (:sem node))]
-        [(append-and-go-to-child
-           state
-           (tree-node
-             word
-             nil
-             nil
-             features
-             new-sem))
-        (* prob-adj prob sem-prob-adj)])
-      )))
+(defn lex-prob-adjuster [ret-val-maker]
+  (fn
+    [state, ^double prob, word, [features, pos, syns, ^double prob-adj]]
+    (let [node (zp/node state)]
+      (if (or (not= (:label node) pos)
+              (not (features-match (-> state zp/node :features) features)))
+        nil
+        (let [[new-sem, ^double sem-prob-adj]
+              (sem-for-lex-node syns (:sem node))]
+          [(ret-val-maker state word features new-sem)
+           (* prob-adj prob sem-prob-adj)])
+       ))))
+
+(def update-state-prob-with-lex-node
+  (lex-prob-adjuster
+    (fn [state word features new-sem]
+      (append-and-go-to-child
+         state
+         (tree-node
+           word
+           nil
+           nil
+           features
+         new-sem)))))
+
+(def update-word-prob-with-lex-info
+  (lex-prob-adjuster (fn [_ word _ _] word)))
 
 (defn check-state-against-syn-sets [[state prob] synsets-info word]
   (if (let [label (-> state zp/node :label)]
@@ -575,7 +587,6 @@
       (filter #(not (nil? %)))
       (into {})))
     )
-
 
 (defn update-state-probs-for-word
   [pcfg lexical-lkup states-and-probs word]
@@ -727,6 +738,64 @@
     beam-size)
   )
 
+(defn autocomplete-parse
+  [pcfg lexical-lkup current-states partial-word]
+  (let [next-possible-states (infer-possible-states-mult
+                               pcfg
+                               current-states
+                               10
+                               nil)
+        possible-word-lkups (subseq lexical-lkup
+                                    >= partial-word
+                                    < (upper-str-bound partial-word))
+        possible-word-lkups (->> possible-word-lkups
+                                 (take 500)
+                                 (map (fn [x]
+                                        [x (->> x second vals (reduce +))]))
+                                 (sort-by second))
+        ^double total-prob (reduce + (map second possible-word-lkups))]
+    (first (reduce
+      (fn [[found, ^double best-prob, ^long best-prob-misses]
+           [word, ^double prob]]
+        (let [found (assoc found word prob)]
+          (if (< prob best-prob)
+            (if (>= best-prob-misses 10)
+              (reduced [found best-prob best-prob-misses])
+              [found best-prob (+ 1 best-prob-misses)])
+            [found prob 0]))
+        )
+      [(priority-map-gt) 0.0 0]
+      (map
+        (fn [[[word lkup-entry], ^double prior-prob]]
+          (let [split-by-syn (synsets-split-by-function' pcfg lkup-entry)
+                adj-prob (/ prior-prob total-prob)]
+            [word
+             (->>
+               next-possible-states
+               (mapcat
+                 (fn [state]
+                   (map #(update-word-prob-with-lex-info state adj-prob word %)
+                      split-by-syn)))
+               (map second)
+               (filter #(-> %))
+               (reduce +))
+             ]))
+        possible-word-lkups)))
+    ))
+
+(defn parse-word [pcfg lexical-lkup current-states word beam-size]
+  (let [word-posses (possible-pos-for-word pcfg lexical-lkup word)
+        next-possible-states (infer-possible-states-mult
+                               pcfg
+                               current-states
+                               beam-size
+                               word-posses)]
+    (update-state-probs-for-word
+      pcfg
+      lexical-lkup
+      next-possible-states
+      word)))
+
 (defn parse-sentence-fragment [pcfg lexical-lkup fragment beam-size]
   (loop [current-states (infer-initial-possible-states
                           pcfg
@@ -737,18 +806,8 @@
     (if (empty? fragment)
       current-states
       (recur
-        (let [word (first fragment)
-              word-posses (possible-pos-for-word pcfg lexical-lkup word)
-              next-possible-states (infer-possible-states-mult
-                                     pcfg
-                                     current-states
-                                     beam-size
-                                     word-posses)]
-          (update-state-probs-for-word
-            pcfg
-            lexical-lkup
-            next-possible-states
-            word))
+        (parse-word
+          pcfg lexical-lkup current-states (first fragment) beam-size)
         (rest fragment)))))
 
 (defn parse-and-learn-sentence
