@@ -70,7 +70,10 @@
       )
     (is (= (:word-list (search-for-parse! current-active-parses split))
            (vec (take 6 split))))
-    (swap! current-active-parses dissoc (vec (take 6 split)) (vec (take 5 split)))
+    (swap! current-active-parses
+           dissoc
+           (vec (take 6 split))
+           (vec (take 5 split)))
     (is (= (:word-list (search-for-parse! current-active-parses split))
            (vec (take 4 split))))
     ))
