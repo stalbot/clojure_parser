@@ -42,7 +42,7 @@
 (defn global-lexicon []
   (load-lex-from-wn-path "resources/wordnet_as_json"))
 
-(defn global-pcfg-and-lex' []
+(defn global-lex-and-pcfg' []
   (println "Building large lexicon and pcfg, please be patient...")
   (let [raw-lex (global-lexicon)
         result [(make-lexical-lkup raw-lex)
@@ -51,4 +51,4 @@
     result)
   )
 
-(def global-pcfg-and-lex (memoize global-pcfg-and-lex'))
+(def global-lex-and-pcfg (memoize global-lex-and-pcfg'))

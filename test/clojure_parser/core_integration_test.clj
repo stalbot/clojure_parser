@@ -3,14 +3,14 @@
             [clojure-parser.core :refer :all]
             [clojure-parser.pcfg-compiler :refer :all]
             [clojure-parser.utils :refer :all]
-            [clojure-parser.pcfg-container :refer [global-pcfg-and-lex]]
+            [clojure-parser.pcfg-container :refer [global-lex-and-pcfg]]
             [clojure.zip :as zp]
             [clojure.data :refer [diff]]
             ))
 
 
-(defn lex-for-test [] (first (global-pcfg-and-lex)))
-(defn pcfg-for-test [] (second (global-pcfg-and-lex)))
+(defn lex-for-test [] (first (global-lex-and-pcfg)))
+(defn pcfg-for-test [] (second (global-lex-and-pcfg)))
 
 (deftest dont-blow-up-building-large-structures
   (is (not= (lex-for-test) (pcfg-for-test))))
