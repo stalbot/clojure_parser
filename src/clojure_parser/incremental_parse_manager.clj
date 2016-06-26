@@ -3,13 +3,15 @@
             [clojure-parser.utils :refer :all]
             [clojure-parser.core :refer [parse-sentence-fragment
                                          parse-word
-                                         ]]))
+                                         autocomplete-parse]]
+            [clojure-parser.pcfg-container :refer [global-pcfg-and-lex]]))
 
 (defmacro min-cached-size [] 4)
 (defmacro default-beam-size [] 100)
+(defmacro expire-after-ms [] 240 * 1000)
 
-(def current-active-parses
-  (atom {}))
+; TODO :consider making this a transient
+(def current-active-parses (atom {}))
 
 (defrecord ActiveParse [word-list current-states created-at touched-at])
 
@@ -36,8 +38,8 @@
         parse-record
         (let [next-word-list (subvec word-list 0 (+ 1 word-list-size))
               next-parse (parse-word
-                           nil
-                           nil
+                           (first (global-pcfg-and-lex))
+                           (second (global-pcfg-and-lex))
                            word-list
                            (last next-word-list)
                            (default-beam-size))
@@ -53,8 +55,8 @@
         found
       (nil? found)
         (let [parsed-states (parse-sentence-fragment
-                              nil
-                              nil
+                              (first (global-pcfg-and-lex))
+                              (second (global-pcfg-and-lex))
                               word-list
                               (default-beam-size))
               parse-record (active-parse word-list parsed-states)]
@@ -81,6 +83,37 @@
         full-word-list (subvec word-list 0 (- (count word-list) 1))
         word-for-autocomplete (last word-list)
         parse-states (:current-states (get-or-create-parse! full-word-list))]
-    ))
+    (mapv first
+          (autocomplete-parse
+            (first (global-pcfg-and-lex))
+            (second (global-pcfg-and-lex))
+            parse-states
+            word-for-autocomplete))))
 
-(defn reap-stale-parses! [])
+(defn reap-stale-parses!
+  "Reaps all parses older than `expire-after-ms` ms. It is (potentially
+   unnecessarily) optimized: first, it grabs all the keys that probably
+   are expired with the read lock, then checks only those keys while
+   holding the write lock. Takes an optional expiration argument for
+   testing purposes."
+  ([] (reap-stale-parses! (expire-after-ms)))
+  ([expire-ms]
+    (let [expired-at (- (epoch-now) expire-ms)
+          possibly-stale (->>
+                           @current-active-parses
+                           (filter #(-> % second :touched-at (< expired-at)))
+                           (map first))]
+      (if (not (empty? possibly-stale))
+        (swap!
+          current-active-parses
+          (fn [parse-objs]
+            (reduce
+              (fn [parse-objs key]
+                ; We MUST check again, someone else may have updated
+                (if (-> parse-objs (get key) :touched-at (< expired-at))
+                  (dissoc parse-objs key)
+                  parse-objs))
+              parse-objs
+              possibly-stale)))))
+      ))
+
