@@ -877,9 +877,26 @@
          pcfg-with-features-and-sems-in-prods)))
 
 (deftest test-autocomplete-parse
-  (is (=
-        (autocomplete-parse
-          compiled-pcfg-for-test compiled-lexicon-for-test
-          (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
-          "co"))
-      "blah"))
+  (let [autocomplete (autocomplete-parse
+                       compiled-pcfg-for-test compiled-lexicon-for-test
+                       (priority-map-gt pre-state-1 0.5 pre-state-2 0.5)
+                       "c")]
+    ; It should throw out the "chase" autocomplete with 0 probability
+    (is (= (map first autocomplete) ["cool"]))
+    (is (> (-> autocomplete first second) 0.0))
+    )
+  (let [partial (parse-sentence-fragment
+                  compiled-pcfg-test-sems-features
+                  compiled-lex-test-sems-features
+                  ["person" "chase"]
+                  50)
+        autocomplete (autocomplete-parse
+                       compiled-pcfg-test-sems-features
+                       compiled-lex-test-sems-features
+                       partial
+                       "f")]
+    (is (= (map first autocomplete) ["face" "faces"]))
+    (is (every? #(> % 0) (map second autocomplete)))
+    )
+  )
+

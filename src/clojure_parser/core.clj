@@ -758,7 +758,9 @@
     (first (reduce
       (fn [[found, ^double best-prob, ^long best-prob-misses]
            [word, ^double prob]]
-        (let [found (assoc found word prob)]
+        (let [found (if (> prob 0.0)
+                      (assoc found word prob)
+                      found)]
           (if (< prob best-prob)
             (if (>= best-prob-misses 25)
               (reduced [found best-prob best-prob-misses])
@@ -828,5 +830,3 @@
          pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
      [pcfg parses]
      )))
-
-
