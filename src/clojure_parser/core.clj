@@ -739,6 +739,12 @@
   )
 
 (defn autocomplete-parse
+  "Given a partial parse and the beginning of a word, does its best
+   to autocomplete that word in the context of the partial parse.
+   Takes a few short-cuts: only considers the first 500 lexigrahically sorted
+   autocomplete words to avoid blowing up. Currently cannot handle empty string.
+   Terminates if 25 words in a row, sorted by prior absolute probability of
+   occurrence, do not top the current best word in terms of posterior probability."
   [pcfg lexical-lkup current-states partial-word]
   (let [next-possible-states (infer-possible-states-mult
                                pcfg
