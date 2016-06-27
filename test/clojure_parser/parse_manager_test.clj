@@ -1,6 +1,7 @@
 (ns clojure-parser.parse-manager-test
   (:require [clojure.test :refer :all]
-            [clojure-parser.core :refer [parse-sentence-fragment]]
+            [clojure-parser.core :refer [parse-sentence-fragment
+                                         autocomplete-parse]]
             [clojure-parser.pcfg-container :refer [global-lex-and-pcfg]]
             [clojure-parser.incremental-parse-manager :refer :all]
             [clojure.string :as string])
@@ -43,9 +44,12 @@
            ))
     ; should have added self and incremental parse
     (is (= (count @current-active-parses) 2))
-    (let [prev-touched-at (get-in
-                            @current-active-parses
-                            [(->> split (take 5) vec) :touched-at])]
+    (let [prev-touched-at-5 (get-in
+                             @current-active-parses
+                             [(->> split (take 5) vec) :touched-at])
+          prev-touched-at-4 (get-in
+                              @current-active-parses
+                              [(->> split (take 4) vec) :touched-at])]
       (is (= (->> (parse-complete-word!
                     current-active-parses
                     (string/join " " (take 6 split)))
@@ -62,11 +66,17 @@
              ))
       ; should have used incremental parses and only added the one
       (is (= (count @current-active-parses) 3))
-      ; should have updated the touched-at
+      ; should have updated the touched-at for the best key
       (is (> (get-in
                @current-active-parses
                [(->> split (take 5) vec) :touched-at])
-             prev-touched-at))
+             prev-touched-at-5))
+      ; should not have updated the touched at for the other key,
+      ; since it shouldn't have had to check it after finding the better one
+      (is (= (get-in
+               @current-active-parses
+               [(->> split (take 4) vec) :touched-at])
+             prev-touched-at-4))
       )
     (is (= (:word-list (search-for-parse! current-active-parses split))
            (vec (take 6 split))))
@@ -78,4 +88,69 @@
            (vec (take 4 split))))
     ))
 
-
+(deftest test-manager-autocomplete
+  (let [current-active-parses (atom {})
+        partial-after-5 (conj (vec (take 5 split)) "gr")
+        partial-after-4 (conj (vec (take 4 split)) "sm")
+        compare-parse-result (autocomplete-parse
+                               (second (global-lex-and-pcfg))
+                               (first (global-lex-and-pcfg))
+                               (parse-sentence-fragment
+                                 (second (global-lex-and-pcfg))
+                                 (first (global-lex-and-pcfg))
+                                 (butlast partial-after-5)
+                                 100)
+                               (last partial-after-5))]
+    (is (= (take
+             10
+             (autocomplete!
+               current-active-parses
+               (string/join " " partial-after-5)))
+           (->>
+             compare-parse-result
+             (map first)
+             (take 10))))
+    ; should have added self and incremental parse
+    (is (= (count @current-active-parses) 2))
+    ; literally same comparison -> having cached data shouldn't change
+    (is (= (take
+             10
+             (autocomplete!
+               current-active-parses
+               (string/join " " partial-after-5)))
+           (->>
+             compare-parse-result
+             (map first)
+             (take 10))))
+    (let [prev-touched-4 (get-in @current-active-parses
+                                 [(vec (take 4 split)) :touched-at])
+          prev-touched-5 (get-in @current-active-parses
+                                 [(vec (take 5 split)) :touched-at])]
+      ; cached data won't affect autocomplete one back
+      (is (= (take
+               10
+               (autocomplete!
+                 current-active-parses
+                 (string/join " " partial-after-4)))
+             (->>
+               (autocomplete-parse
+                 (second (global-lex-and-pcfg))
+                 (first (global-lex-and-pcfg))
+                 (parse-sentence-fragment
+                   (second (global-lex-and-pcfg))
+                   (first (global-lex-and-pcfg))
+                   (butlast partial-after-4)
+                   100)
+                 (last partial-after-4))
+               (map first)
+               (take 10))))
+      ; will use and mark previous cached parse
+      (is (> (get-in @current-active-parses
+                     [(vec (take 4 split)) :touched-at])
+             prev-touched-4))
+      ; will not use/mark a key it is incompatible with
+      (is (= (get-in @current-active-parses
+                     [(vec (take 5 split)) :touched-at])
+             prev-touched-5))
+      )
+    ))
