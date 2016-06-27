@@ -154,3 +154,26 @@
              prev-touched-5))
       )
     ))
+
+(deftest test-reap-stale-parses
+  (let [current-active-parses (atom {})]
+    (parse-complete-word!
+      current-active-parses
+      (string/join " " (take 4 split)))
+    (reap-stale-parses! current-active-parses 5000)
+    (is (= (count @current-active-parses) 1))
+    (Thread/sleep 2)
+    (reap-stale-parses! current-active-parses 1)
+    (is (= (count @current-active-parses) 0))
+    (parse-complete-word!
+      current-active-parses
+      (string/join " " (take 5 split)))
+    (Thread/sleep 11)
+    (parse-complete-word!
+      current-active-parses
+      (string/join " " (take 4 split)))
+    ; although this seems susceptible to some sort of timing problem, if it ever
+    ; took more than 10ms to do this, it would be a sign something else was wrong
+    (reap-stale-parses! current-active-parses 10)
+    (is (= (count @current-active-parses) 1))
+    ))
