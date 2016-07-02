@@ -10,6 +10,8 @@
     [compojure.core :refer [defroutes GET POST]]
     [compojure.route :as route]
     [org.httpkit.server :as server]
+    [clojure-parser.incremental-parse-manager :refer [autocomplete!
+                                                      parse-complete-word!]]
     ))
 
 (declare channel-socket)
@@ -53,7 +55,8 @@
   (let [session (:session ring-req)
         uid     (:uid     session)]
     (when ?reply-fn
-      (?reply-fn {:umatched-event-as-echoed-from-server event}))))
+      (parse-complete-word! ?data)
+      (?reply-fn {:success true}))))
 
 (defmethod event-handler
   :new-partial-word
@@ -61,7 +64,8 @@
   (let [session (:session ring-req)
         uid     (:uid     session)]
     (when ?reply-fn
-      (?reply-fn {:umatched-event-as-echoed-from-server event}))))
+      (let [completions (autocomplete! ?data)]
+        (?reply-fn {:completions completions}) ))))
 
 (defn start-router []
   (defonce router
