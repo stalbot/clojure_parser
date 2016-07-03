@@ -54,7 +54,7 @@
 
 (defn resolve-full-lambda [next-sem lamdbda-form]
   "Given a full lambda from resolve-lambda, sub in the relations
-   created by the full lambda to all the relevant sematic variables.
+   created by the full lambda to all the relevant semantic variables.
    If it is building a purely surface relation (no :v0 style discourse
    vars), it associates the new relation it builds with whatever the
    current discourse var is in the context."
@@ -279,12 +279,7 @@
             (let [[next-sem, ^double next-sem-p] (sem-for-next current-node)]
               [[[(append-and-go-to-child
                    current-state
-                   (tree-node
-                     new-label
-                     nil
-                     []
-                     next-features
-                     next-sem))
+                   (tree-node new-label nil [] next-features next-sem))
                  (fast-mult current-prob next-sem-p)]]
                []])
             [[] []]
@@ -626,7 +621,7 @@
 
 (defn add-sems-at-eos
   "Starting from the bottom rightmost node, add the semantic elements
-   going back up the tree. Don't add sematics until we reach the
+   going back up the tree. Don't add semantics until we reach the
    lexical level (e.g. cat.n.01, not cat.n.01.cat)"
   ([pcfg state] (add-sems-at-eos pcfg state false))
   ([pcfg state add-sem]
