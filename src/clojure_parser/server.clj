@@ -1,3 +1,6 @@
+; this file is EXPERIMENTAL, very likely NOTHING REALLY WORKS
+; TODO: fix it up so that it does!
+; in the meanwhile, don't use anything in here outside of here, duh!
 (ns clojure-parser.server
   (:require
     [ring.middleware.defaults :as defaults]
