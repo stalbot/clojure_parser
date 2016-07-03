@@ -672,10 +672,10 @@
   (assoc example-parent-tree-node :sem (sem-for-parent example-parent-tree-node)))
 
 (deftest test-sem-for-next
-  (is (= (:cur-var (sem-for-next example-parent-tree-node1)) :v1))
-  (is (= (:val (sem-for-next example-parent-tree-node1))
+  (is (= (:cur-var (first (sem-for-next example-parent-tree-node1))) :v1))
+  (is (= (:val (first (sem-for-next example-parent-tree-node1)))
          (get-in example-parent-tree-node1 [:children 1 :sem :val])))
-  (let [next (sem-for-next tree-node-with-lambda)]
+  (let [[next _] (sem-for-next tree-node-with-lambda)]
     (is (= (:lambda next) nil))
     (is (= (-> next :val :v0) #{"stuff", ["a_verb" :v0 :v4]}))
     (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))

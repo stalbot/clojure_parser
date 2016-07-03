@@ -67,15 +67,17 @@
                    (reduce #(assoc %1 %2 (get %1 %2))
                            (:lex-vals next-sem)
                            vars-in-relations))]
-    (reduce
-      (fn [next-sem var]
-        (update-in
-          next-sem
-          [:val var]
-          #(difference (conj (or %1 #{}) lamdbda-form)
-                       vars-in-relations)))
-      next-sem
-      vars-for-update)))
+    [(reduce
+       (fn [next-sem var]
+         (update-in
+           next-sem
+           [:val var]
+           #(difference (conj (or %1 #{}) lamdbda-form)
+                        vars-in-relations)))
+       next-sem
+       vars-for-update),
+     1.0]
+    ))
 
 (defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
   "Given a lambda record, and a new lambda-arg to call the lambda with,
@@ -86,10 +88,11 @@
         remaining-idxs (remove #(= % lambda-idx) (:remaining-idxs lambda))]
     (if (empty? remaining-idxs)
       (resolve-full-lambda (dissoc next-sem :lambda) (:form subbed-lambda))
-      (assoc
-        next-sem
-        :lambda
-        (assoc subbed-lambda :remaining-idxs remaining-idxs)))))
+      [(assoc
+         next-sem
+         :lambda
+         (assoc subbed-lambda :remaining-idxs remaining-idxs)),
+       1.0])))
 
 (defn lex-var-for-sem [sem]
   (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
@@ -142,7 +145,7 @@
 
 (defn sem-for-next [cur-node]
   "Given a node with zero or more children, get the sem for the next
-   (or first) child. Look up the relevant sematic entries and complete
+   (or first) child. Look up the relevant semantic entries and complete
    any conditions, lambdas, or arg passing that needs to happen."
   (let [children (into [] (:children cur-node))
         next-index (count children)
@@ -155,13 +158,14 @@
         ]
     (condp = (:op-type operation)
       :call-lambda (call-lambda next-sem cur-node operation)
-      :lambda-declare (assoc next-sem :lambda (:lambda operation))
-      :pass-arg (assoc next-sem
-                  :cur-arg
-                  (get-in children [(:arg-idx operation) :sem :cur-var])
-                  :lambda (:lambda operation))
+      :lambda-declare [(assoc next-sem :lambda (:lambda operation)), 1.0]
+      :pass-arg [(assoc next-sem
+                   :cur-arg
+                   (get-in children [(:arg-idx operation) :sem :cur-var])
+                   :lambda (:lambda operation))
+                 1.0]
       :complete-condition (complete-condition next-sem cur-node operation)
-      next-sem ; default case
+      [next-sem, 1.0] ; default case
       )))
 
 (defn declare-lambda-on-sem [entry-lambda node-sem lex-sem-var]
@@ -202,15 +206,16 @@
 
 (defn get-successor-child-state
   [production current-state new-label inherited-features prob-modifier]
-  [(append-and-go-to-child
-     current-state
-     (tree-node
-       new-label
-       production
-       []
-       inherited-features
-       (sem-for-next (zp/node current-state))))
-   (fast-mult prob-modifier (:count production))])
+  (let [[next-sem, ^double next-sem-p] (sem-for-next (zp/node current-state))]
+    [(append-and-go-to-child
+       current-state
+       (tree-node
+         new-label
+         production
+         []
+         inherited-features
+         next-sem))
+     (fast-mult next-sem-p (fast-mult prob-modifier (:count production)))]))
 
 (defn get-next-features
   [current-node new-entry is-head]
@@ -271,16 +276,17 @@
         (if (or (term-sym? new-label) (get-in pcfg [new-label :lex-node]))
           (if (or (nil? possible-word-posses)
                    (contains? possible-word-posses new-label))
-            [[[(append-and-go-to-child
-                 current-state
-                 (tree-node
-                   new-label
-                   nil
-                   []
-                   next-features
-                   (sem-for-next current-node)))
-               current-prob]]
-             []]
+            (let [[next-sem, ^double next-sem-p] (sem-for-next current-node)]
+              [[[(append-and-go-to-child
+                   current-state
+                   (tree-node
+                     new-label
+                     nil
+                     []
+                     next-features
+                     next-sem))
+                 (fast-mult current-prob next-sem-p)]]
+               []])
             [[] []]
             )
           (let [new-productions (get-in pcfg [new-label :productions])
@@ -422,6 +428,10 @@
     (assoc parent
       :features parent-features)))
 
+(defn get-sem-add-adj-prob [adding-sem-var node-sem]
+  ; TODO!!!
+  1.0)
+
 (defn sem-for-lex-node [syns node-sem]
   "Update the semantic info for a new lexical entry.
 
@@ -443,11 +453,16 @@
                      node-sem
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
-        node-sem (if (and cur-arg entry-lambda)
-                   (resolve-lambda node-sem entry-lambda 1 cur-arg)
-                   node-sem)
+        ^double add-adj-prob (get-sem-add-adj-prob lex-sem-var node-sem)
+        [node-sem, ^double p-adj] (if (and cur-arg entry-lambda)
+                                     (resolve-lambda
+                                       node-sem
+                                       entry-lambda
+                                       1
+                                       cur-arg)
+                                     [node-sem, 1.0])
         node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
-    [node-sem, 1.0]  ; TODO: obviously make this a real probability
+    [node-sem, (* p-adj add-adj-prob)]
     ))
 
 (def first-sem
