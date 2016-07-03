@@ -260,7 +260,7 @@
 
 (def sem-net-syms [:hypernyms :hyponyms])
 
-(defn make-semantic-lkup [lexicon]
+(defn make-semantic-hierarchy [lexicon]
   (reduce-kv
     (fn [sem-lkup syn-name lex-entry]
       (assoc sem-lkup
@@ -355,3 +355,9 @@
       )
     )
   )
+
+(defn glob-data-from-raw [raw-pcfg raw-lexicon]
+  (global-data
+    (build-operational-pcfg
+      (lexicalize-pcfg raw-pcfg raw-lexicon))
+    (make-lexical-lkup raw-lexicon)))

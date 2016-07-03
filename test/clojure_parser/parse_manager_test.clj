@@ -2,7 +2,7 @@
   (:require [clojure.test :refer :all]
             [clojure-parser.core :refer [parse-sentence-fragment
                                          autocomplete-parse]]
-            [clojure-parser.pcfg-container :refer [global-lex-and-pcfg]]
+            [clojure-parser.pcfg-container :refer [cached-global-data]]
             [clojure-parser.incremental-parse-manager :refer :all]
             [clojure.string :as string])
   )
@@ -19,8 +19,7 @@
                 (take 4))
            (->>
              (parse-sentence-fragment
-               (second (global-lex-and-pcfg))
-               (first (global-lex-and-pcfg))
+               (cached-global-data)
                (take 2 split)
                50)
              (map first)
@@ -35,8 +34,7 @@
                 (take 4))
            (->>
              (parse-sentence-fragment
-               (second (global-lex-and-pcfg))
-               (first (global-lex-and-pcfg))
+               (cached-global-data)
                (take 5 split)
                100)
              (map first)
@@ -57,8 +55,7 @@
                   (take 4))
              (->>
                (parse-sentence-fragment
-                 (second (global-lex-and-pcfg))
-                 (first (global-lex-and-pcfg))
+                 (cached-global-data)
                  (take 6 split)
                  100)
                (map first)
@@ -93,11 +90,9 @@
         partial-after-5 (conj (vec (take 5 split)) "gr")
         partial-after-4 (conj (vec (take 4 split)) "sm")
         compare-parse-result (autocomplete-parse
-                               (second (global-lex-and-pcfg))
-                               (first (global-lex-and-pcfg))
+                               (cached-global-data)
                                (parse-sentence-fragment
-                                 (second (global-lex-and-pcfg))
-                                 (first (global-lex-and-pcfg))
+                                 (cached-global-data)
                                  (butlast partial-after-5)
                                  100)
                                (last partial-after-5))]
@@ -134,11 +129,9 @@
                  (string/join " " partial-after-4)))
              (->>
                (autocomplete-parse
-                 (second (global-lex-and-pcfg))
-                 (first (global-lex-and-pcfg))
+                 (cached-global-data)
                  (parse-sentence-fragment
-                   (second (global-lex-and-pcfg))
-                   (first (global-lex-and-pcfg))
+                   (cached-global-data)
                    (butlast partial-after-4)
                    100)
                  (last partial-after-4))

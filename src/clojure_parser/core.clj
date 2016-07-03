@@ -404,8 +404,9 @@
                 (/ total-local-count total-count)]))))
     ))
 
-(defn synsets-split-by-function [pcfg lexical-lkup raw-word]
-  (let [lemmas-w-counts (get lexical-lkup raw-word)]
+(defn synsets-split-by-function [glob-data raw-word]
+  (let [{:keys [pcfg lexical-lkup]} glob-data
+        lemmas-w-counts (get lexical-lkup raw-word)]
     (synsets-split-by-function' pcfg lemmas-w-counts)))
 
 (defn make-next-initial-state
@@ -466,12 +467,12 @@
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
   from a lexical etnry"
-  [pcfg lexical-lkup word]
+  [glob-data word]
   (into
     (priority-map-gt)
     (for
       [[features pos syns prob]
-       (synsets-split-by-function pcfg lexical-lkup word)]
+       (synsets-split-by-function glob-data word)]
       (let [[start-sem _] (sem-for-lex-node syns first-sem)
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
@@ -514,11 +515,12 @@
   "From a start word, builds all the initial states needed for the sentence
   parser. Stops at *max-states* or *min-prob-ratio*. Assumes `lexicon` is
   the result of a call to `make-lexical-lkup`"
-  [pcfg, lexical-lkup, first-word, ^long beam-size]
+  [glob-data, first-word, ^long beam-size]
   (finalize-initial-states
-    (loop [frontier (create-first-states pcfg lexical-lkup first-word)
+    (loop [frontier (create-first-states glob-data first-word)
            found (transient [])]
       (let [[current-state, ^double current-prob] (peek frontier)
+            pcfg (:pcfg glob-data)
             [frontier found]
             (reduce-kv
               (fn [[frontier found] [parent-sym prod] ^double prob]
@@ -599,8 +601,8 @@
     )
 
 (defn update-state-probs-for-word
-  [pcfg lexical-lkup states-and-probs word]
-  (let [synsets-info (synsets-split-by-function pcfg lexical-lkup word)]
+  [glob-data states-and-probs word]
+  (let [synsets-info (synsets-split-by-function glob-data word)]
     (->>
       states-and-probs
       (pmap #(check-state-against-syn-sets % synsets-info word))
@@ -755,8 +757,9 @@
    autocomplete words to avoid blowing up. Currently cannot handle empty string.
    Terminates if 25 words in a row, sorted by prior absolute probability of
    occurrence, do not top the current best word in terms of posterior probability."
-  [pcfg lexical-lkup current-states partial-word]
-  (let [next-possible-states (infer-possible-states-mult
+  [glob-data current-states partial-word]
+  (let [{:keys [pcfg lexical-lkup]} glob-data
+        next-possible-states (infer-possible-states-mult
                                pcfg
                                current-states
                                10
@@ -806,41 +809,40 @@
         possible-word-lkups)))
     ))
 
-(defn parse-word [pcfg lexical-lkup current-states word beam-size]
-  (let [word-posses (possible-pos-for-word pcfg lexical-lkup word)
+(defn parse-word [glob-data current-states word beam-size]
+  (let [{:keys [pcfg lexical-lkup]} glob-data
+        word-posses (possible-pos-for-word pcfg lexical-lkup word)
         next-possible-states (infer-possible-states-mult
                                pcfg
                                current-states
                                beam-size
                                word-posses)]
     (update-state-probs-for-word
-      pcfg
-      lexical-lkup
+      glob-data
       next-possible-states
       word)))
 
-(defn parse-sentence-fragment [pcfg lexical-lkup fragment beam-size]
+(defn parse-sentence-fragment [glob-data fragment beam-size]
   (loop [current-states (infer-initial-possible-states
-                          pcfg
-                          lexical-lkup
+                          glob-data
                           (first fragment)
                           beam-size)
          fragment (rest fragment)]
     (if (empty? fragment)
       current-states
       (recur
-        (parse-word
-          pcfg lexical-lkup current-states (first fragment) beam-size)
+        (parse-word glob-data current-states (first fragment) beam-size)
         (rest fragment)))))
 
 (defn parse-and-learn-sentence
-  ([pcfg lexical-lkup sentence beam-size]
-   (parse-and-learn-sentence pcfg lexical-lkup sentence beam-size true))
-  ([pcfg lexical-lkup sentence]
-   (parse-and-learn-sentence pcfg lexical-lkup sentence (default-beam-size) true))
-  ([pcfg lexical-lkup sentence beam-size learn]
+  ([glob-data sentence beam-size]
+   (parse-and-learn-sentence glob-data sentence beam-size true))
+  ([glob-data sentence]
+   (parse-and-learn-sentence glob-data sentence (default-beam-size) true))
+  ([glob-data sentence beam-size learn]
    (let [final-states (parse-sentence-fragment
-                        pcfg lexical-lkup sentence beam-size)
+                        glob-data sentence beam-size)
+         pcfg (:pcfg glob-data)
          parses (reformat-states-as-parses
                   (update-state-probs-for-eos pcfg final-states))
          pcfg (if learn (learn-from-parses pcfg parses) pcfg)]

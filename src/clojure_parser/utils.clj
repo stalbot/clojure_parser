@@ -94,3 +94,10 @@
 
 (defn plain-tree [thing]
   (-> thing zp/root (extract-stuff [:label :features])))
+
+(defrecord GlobalData [pcfg lexical-lkup sem-hierarcy sem-relation-probs])
+(defn global-data
+  ([pcfg lexical-kup]
+   (GlobalData. pcfg lexical-kup nil nil))
+  ([pcfg lexical-lkup sem-hierarchy sem-relation-probs]
+   (GlobalData. pcfg lexical-lkup sem-hierarchy sem-relation-probs)))
