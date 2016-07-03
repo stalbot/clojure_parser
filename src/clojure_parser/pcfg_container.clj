@@ -46,10 +46,7 @@
 (defn cached-global-data' []
   (println "Building large lexicon and pcfg, please be patient...")
   (let [raw-lex (global-lexicon)
-        lexical-lkup (make-lexical-lkup raw-lex)
-        pcfg (build-operational-pcfg
-               (lexicalize-pcfg super-realistic-pcfg raw-lex))
-        result (global-data pcfg lexical-lkup)]
+        result (glob-data-from-raw super-realistic-pcfg raw-lex)]
     (println "finished building result of sizes " (mapv count (vals result)))
     result)
   )

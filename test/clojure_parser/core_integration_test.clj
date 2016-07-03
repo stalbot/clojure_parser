@@ -10,7 +10,7 @@
 
 
 (deftest dont-blow-up-building-large-structures
-  (is (nil? (cached-global-data))))
+  (is (not (nil? (cached-global-data)))))
 
 (defn quick-parse [sentence beam-size]
   (second
