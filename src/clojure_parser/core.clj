@@ -49,9 +49,6 @@
 (defn pcfg-node-opts-for-child [node child-idx]
   (get-in node [:production :sem child-idx]))
 
-(defn is-discourse-var? [var]
-  (= (second (str var)) \v))
-
 (defn resolve-full-lambda [next-sem lamdbda-form]
   "Given a full lambda from resolve-lambda, sub in the relations
    created by the full lambda to all the relevant semantic variables.
@@ -307,14 +304,6 @@
     )
   )
 
-(defn renormalize-found-states!
-  [found-states]
-  (let [found-states (persistent! found-states)
-        total (reduce + (map last found-states))]
-    (map
-      (fn [[k v]] [k (fast-div v total)])
-      (filter (fn [[_ v]] (not= v 0.0)) found-states))))
-
 (defn pos-start-state [lex-state]
   "Takes the state at a lex node and does the necessary steps to make it a
    state ready to traverse as part of infer-possible-states. Normally this
@@ -348,7 +337,7 @@
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
   [pcfg, current-state, ^long beam-size, possible-word-posses]
-  (renormalize-found-states!
+  (renormalize-trans-prob-map!
     (loop [frontier (fast-pq (pos-start-state current-state) 1.0)
            found (transient [])
            best-prob nil]
@@ -607,7 +596,7 @@
       states-and-probs
       (pmap #(check-state-against-syn-sets % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
-      renormalize-found-states!)
+      renormalize-trans-prob-map!)
     ))
 
 (defn tree-is-filled
@@ -643,7 +632,7 @@
   that they do not have any extra words (possibly very close to zero
   for some states)."
   [pcfg states-and-probs]
-  (renormalize-found-states!
+  (renormalize-trans-prob-map!
     (reduce
       (fn [new-states-and-probs [state prob]]
         (if (tree-is-filled state)

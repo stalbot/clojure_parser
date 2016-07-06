@@ -101,3 +101,14 @@
    (GlobalData. pcfg lexical-kup nil nil))
   ([pcfg lexical-lkup sem-hierarchy sem-relation-probs]
    (GlobalData. pcfg lexical-lkup sem-hierarchy sem-relation-probs)))
+
+(defn is-discourse-var? [var]
+  (= (second (str var)) \v))
+
+(defn renormalize-trans-prob-map!
+  [trans-prob-map]
+  (let [trans-prob-map (persistent! trans-prob-map)
+        total (reduce + (map last trans-prob-map))]
+    (map
+      (fn [[k v]] [k (fast-div v total)])
+      (filter (fn [[_ v]] (not= v 0.0)) trans-prob-map))))

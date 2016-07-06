@@ -6,6 +6,7 @@
             [clojure.zip :as zp]
             [clojure.data.json :as json]
             [clojure.data :refer [diff]]
+            [clojure-parser.sem-prob-query :refer :all]
             ))
 
 (def pcfg-for-test
@@ -870,4 +871,5 @@
     (is (every? #(> % 0) (map second autocomplete)))
     )
   )
+
 
