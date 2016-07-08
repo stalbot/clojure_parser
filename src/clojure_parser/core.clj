@@ -2,6 +2,7 @@
   (:require [clojure.data.priority-map :refer [priority-map-by]]
             [clojure.zip :as zp]
             [clojure-parser.utils :refer :all]
+            [clojure-parser.sem-prob-query :refer [probs-for-new-lex-var]]
             [clojure.set :refer [difference]]))
 
 ; these are going to be used in inner loops, so bind them in as macros
@@ -386,7 +387,7 @@
              (let [^double total-local-count (reduce + (map last syns-to-counts))]
                [feat
                 pos
-                (into (priority-map-gt)
+                (into {}
                       (map (fn [[name, _, ^double count]]
                              [name (/ count total-local-count)])
                            syns-to-counts))
@@ -413,11 +414,7 @@
     (assoc parent
       :features parent-features)))
 
-(defn get-sem-add-adj-prob [adding-sem-var node-sem]
-  ; TODO!!!
-  1.0)
-
-(defn sem-for-lex-node [syns node-sem]
+(defn sem-for-lex-node [glob-data syns node-sem]
   "Update the semantic info for a new lexical entry.
 
    syns -> map of each synset to probability
@@ -438,16 +435,19 @@
                      node-sem
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
-        ^double add-adj-prob (get-sem-add-adj-prob lex-sem-var node-sem)
-        [node-sem, ^double p-adj] (if (and cur-arg entry-lambda)
-                                     (resolve-lambda
-                                       node-sem
-                                       entry-lambda
-                                       1
-                                       cur-arg)
-                                     [node-sem, 1.0])
-        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)]
-    [node-sem, (* p-adj add-adj-prob)]
+        [node-sem p-adj] (if (and cur-arg entry-lambda)
+                               (resolve-lambda
+                                 node-sem
+                                 entry-lambda
+                                 1
+                                 cur-arg)
+                               [node-sem, 1.0])
+        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)
+        [node-sem add-adj-prob] (probs-for-new-lex-var
+                                  glob-data
+                                  lex-sem-var
+                                  node-sem)        ]
+    [node-sem, (fast-mult p-adj add-adj-prob)]
     ))
 
 (def first-sem
@@ -462,7 +462,7 @@
     (for
       [[features pos syns prob]
        (synsets-split-by-function glob-data word)]
-      (let [[start-sem _] (sem-for-lex-node syns first-sem)
+      (let [[start-sem _] (sem-for-lex-node glob-data syns first-sem)
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
          prob]))))
@@ -552,13 +552,14 @@
 
 (defn lex-prob-adjuster [ret-val-maker]
   (fn
-    [state, ^double prob, word, [features, pos, syns, ^double prob-adj]]
-    (let [node (zp/node state)]
+    [glob-data, state, prob, word, [features, pos, syns, ^double prob-adj]]
+    (let [node (zp/node state)
+          ^double prob prob]
       (if (or (not= (:label node) pos)
               (not (features-match (:features node) features)))
         nil
         (let [[new-sem, ^double sem-prob-adj]
-              (sem-for-lex-node syns (:sem node))]
+              (sem-for-lex-node glob-data syns (:sem node))]
           [(ret-val-maker state word features new-sem)
            (* prob-adj prob sem-prob-adj)])
        ))))
@@ -578,13 +579,14 @@
 (def update-word-prob-with-lex-info
   (lex-prob-adjuster (fn [_ word _ _] word)))
 
-(defn check-state-against-syn-sets [[state prob] synsets-info word]
+(defn check-state-against-syn-sets
+  [glob-data [state prob] synsets-info word]
   (if (let [label (-> state zp/node :label)]
         (and (term-sym? label) (= label word)))
     {state prob}
     (->>
       synsets-info
-      (map #(update-state-prob-with-lex-node state prob word %))
+      (map #(update-state-prob-with-lex-node glob-data state prob word %))
       (filter #(not (nil? %)))
       (into {})))
     )
@@ -594,7 +596,7 @@
   (let [synsets-info (synsets-split-by-function glob-data word)]
     (->>
       states-and-probs
-      (pmap #(check-state-against-syn-sets % synsets-info word))
+      (pmap #(check-state-against-syn-sets glob-data % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
       renormalize-trans-prob-map!)
     ))
@@ -786,6 +788,7 @@
                (mapcat
                  (fn [[state, ^double state-prob]]
                    (map #(update-word-prob-with-lex-info
+                          glob-data
                           state
                           (* state-prob adj-prob)
                           word
