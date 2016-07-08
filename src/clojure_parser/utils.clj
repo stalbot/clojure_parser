@@ -105,10 +105,26 @@
 (defn is-discourse-var? [var]
   (= (second (str var)) \v))
 
-(defn renormalize-trans-prob-map!
-  [trans-prob-map]
-  (let [trans-prob-map (persistent! trans-prob-map)
+(defn renormalize-trans-probs!
+  "Works on any transient data structure of form [[a N] [b N]] where
+   N is a number -> including maps"
+  [trans-prob-data]
+  (let [trans-prob-map (persistent! trans-prob-data)
         total (reduce + (map last trans-prob-map))]
     (map
       (fn [[k v]] [k (fast-div v total)])
       (filter (fn [[_ v]] (not= v 0.0)) trans-prob-map))))
+
+(defn renormalize-trans-prob-map!
+  "Similar to renormalize-trans-probs!, but specially optimized for maps"
+  [trans-prob-map]
+  (let [pers-prob-map (persistent! trans-prob-map)
+        total (->> pers-prob-map vals (reduce +))]
+    (->>
+      pers-prob-map
+      (reduce-kv
+        #(if (= 0.0 %3)
+          (dissoc! %1 %2)
+          (assoc! %1 %2 (fast-div %3 total)))
+        (transient pers-prob-map))
+      persistent!)))

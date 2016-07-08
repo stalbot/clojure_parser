@@ -338,7 +338,7 @@
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
   [pcfg, current-state, ^long beam-size, possible-word-posses]
-  (renormalize-trans-prob-map!
+  (renormalize-trans-probs!
     (loop [frontier (fast-pq (pos-start-state current-state) 1.0)
            found (transient [])
            best-prob nil]
@@ -598,7 +598,7 @@
       states-and-probs
       (pmap #(check-state-against-syn-sets glob-data % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
-      renormalize-trans-prob-map!)
+      renormalize-trans-probs!)
     ))
 
 (defn tree-is-filled
@@ -634,7 +634,7 @@
   that they do not have any extra words (possibly very close to zero
   for some states)."
   [pcfg states-and-probs]
-  (renormalize-trans-prob-map!
+  (renormalize-trans-probs!
     (reduce
       (fn [new-states-and-probs [state prob]]
         (if (tree-is-filled state)

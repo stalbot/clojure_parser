@@ -39,8 +39,8 @@
                syn-entry-keys1 syn-entry-keys1
                adj-prob 0.0]
           (if (empty? syn-entry-keys1)
-            [(into {} (renormalize-trans-prob-map! syn-entry1-t))
-             (into {} (renormalize-trans-prob-map! syn-entry2-t))
+            [(renormalize-trans-prob-map! syn-entry1-t)
+             (renormalize-trans-prob-map! syn-entry2-t)
              adj-prob]
             (let [key1 (first syn-entry-keys1)
                   ^double prob1 (get syn-entry1 key1)
