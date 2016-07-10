@@ -224,7 +224,10 @@
     (is (= (map :label (-> inferred keys (nth 1) zp/up zp/up zp/node :production :elements))
            ["$N" "$N"]))
     (is (= (-> inferred keys first zp/node :sem)
-           {:val {:v0 #{:s0}}, :cur-var :v0, :lex-vals {:s0 {"face.n.01" 1.0}}}))
+           {:val {:v0 #{:s0}},
+            :cur-var :v0,
+            :lex-vals {:s0 {"face.n.01" 1.0}},
+            :val-heads {}}))
     )
   (let [inferred (infer-initial-possible-states
                    glob-data-for-test
@@ -627,8 +630,9 @@
     "el1"
     {:sem [{} {} {:inherit-var true}]}
     [{:sem "shouldn't matter"}
-     {:sem {:val {:v0 ["hi" [:v0 :v1]] :v1 ["yo" "thing" [:v0 :v1]]}
-            :cur-var :v2}}]
+     {:sem {:val {:v0 #{:s0 [:v0 :v1]} :v1 #{:s1 :s2 [:v0 :v1]}}
+            :cur-var :v2
+            :lex-vals {:s0 {"hi" 1}, :s1 {"bye" 1}, :s2 {"yes" 1}}}}]
     {}
     {:cur-var :v1}))
 
@@ -646,22 +650,40 @@
 
 (deftest test-sem-for-parent
   (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
-         [{:v0 ["hi" [:v0 :v1]] :v1 ["yo" "thing" [:v0 :v1]]} :v1]))
+         [{:v0 #{:s0 [:v0 :v1]} :v1 #{:s1 :s2 [:v0 :v1]}} :v1]))
   )
 
 (def example-parent-tree-node1
   (assoc example-parent-tree-node :sem (sem-for-parent example-parent-tree-node)))
 
 (deftest test-sem-for-next
-  (is (= (:cur-var (first (sem-for-next example-parent-tree-node1))) :v1))
-  (is (= (:val (first (sem-for-next example-parent-tree-node1)))
-         (get-in example-parent-tree-node1 [:children 1 :sem :val])))
-  (let [[next _] (sem-for-next tree-node-with-lambda)]
-    (is (= (:lambda next) nil))
-    (is (= (-> next :val :v0) #{"stuff", ["a_verb" :v0 :v4]}))
-    (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))
-    )
-  )
+  (let [eptn1-zp (mk-traversable-tree example-parent-tree-node1)]
+    (is (= (:cur-var (first (sem-for-next eptn1-zp false)))
+           :v1))
+    (is (= (:val (first (sem-for-next eptn1-zp false)))
+           (get-in example-parent-tree-node1 [:children 1 :sem :val])))
+    (is (= (:val-heads (first (sem-for-next eptn1-zp true)))
+           {:v1 [:s3 0]}))
+    (is (= (:val-heads (first (sem-for-next
+                                (zp/edit
+                                  eptn1-zp
+                                  #(assoc-in % [:sem :val-heads :v1] [:s2 1]))
+                                true)))
+           {:v1 [:s3 0]}))
+    (is (= (:val-heads (first (sem-for-next
+                                (zp/edit
+                                  eptn1-zp
+                                  #(assoc-in % [:sem :val-heads :v1] [:s2 0]))
+                                true)))
+           {:v1 [:s2 0]}))
+    (let [[next _] (sem-for-next
+                     (mk-traversable-tree tree-node-with-lambda)
+                     false)]
+      (is (= (:lambda next) nil))
+      (is (= (-> next :val :v0) #{"stuff", ["a_verb" :v0 :v4]}))
+      (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))
+      )
+    ))
 
 (def pcfg-with-features-and-sems-in-prods
   {

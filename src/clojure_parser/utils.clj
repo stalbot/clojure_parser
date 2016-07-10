@@ -128,3 +128,7 @@
           (assoc! %1 %2 (fast-div %3 total)))
         (transient pers-prob-map))
       persistent!)))
+
+(defn zp-depth [zp-data]
+  ; hack the clojure.zip internals!
+  (-> zp-data second :pnodes count))

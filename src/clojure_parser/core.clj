@@ -85,19 +85,12 @@
   (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
         remaining-idxs (remove #(= % lambda-idx) (:remaining-idxs lambda))]
     (if (empty? remaining-idxs)
-      (resolve-full-lambda (dissoc next-sem :lambda) (:form subbed-lambda))
+      (resolve-full-lambda (assoc next-sem :lambda nil) (:form subbed-lambda))
       [(assoc
          next-sem
          :lambda
          (assoc subbed-lambda :remaining-idxs remaining-idxs)),
        1.0])))
-
-(defn lex-var-for-sem [sem]
-  (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
-    (if (and (contains? (:lex-vals sem) key1)
-             (nil? (get-in sem [:lex-vals key1])))
-      key1
-      (keyword (str "s" (count (:lex-vals sem)))))))
 
 (defn call-lambda [next-sem cur-node op]
   "A wrapper around resolve-lambda that can pass in the right info
@@ -141,11 +134,36 @@
       (vals arg-map))
     ))
 
-(defn sem-for-next [cur-node]
+(defn- lex-var-for-sem [sem]
+  "This method is to enforce the slightly hacky rules around adding
+   lexical vars (e.g. :s1) to a semantic record. In order to add the
+   lex var without a downstream func sticking it in the :val, we mark it as nil
+   in the :lex-vals of the semantic record -> need to check for that"
+  (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
+    (if (and (contains? (:lex-vals sem) key1)
+             (nil? (get-in sem [:lex-vals key1])))
+      key1
+      (keyword (str "s" (count (:lex-vals sem)))))))
+
+(defn- sem-for-head [cur-state node-sem]
+  (let [^long cur-depth (zp-depth cur-state)
+        cur-var (:cur-var node-sem)
+        existing-depth (-> node-sem :val-heads (get cur-var) second)]
+    (if (and existing-depth
+             (let [^long e existing-depth] (>= cur-depth e)))
+      node-sem
+      (assoc-in
+        node-sem
+        [:val-heads cur-var]
+        [(lex-var-for-sem node-sem) cur-depth]))
+    ))
+
+(defn sem-for-next [cur-state is-head]
   "Given a node with zero or more children, get the sem for the next
    (or first) child. Look up the relevant semantic entries and complete
    any conditions, lambdas, or arg passing that needs to happen."
-  (let [children (into [] (:children cur-node))
+  (let [cur-node (zp/node cur-state)
+        children (into [] (:children cur-node))
         next-index (count children)
         cur-sem (:sem cur-node)
         operation (pcfg-node-opts-for-child cur-node next-index)
@@ -153,6 +171,9 @@
         next-sem (if is-inheriting
                    cur-sem
                    (with-new-discourse-var cur-sem))
+        next-sem (if is-head
+                   (sem-for-head cur-state next-sem)
+                   next-sem)
         ]
     (condp = (:op-type operation)
       :call-lambda (call-lambda next-sem cur-node operation)
@@ -203,8 +224,10 @@
       (with-new-discourse-var new-parent-sem))))
 
 (defn get-successor-child-state
-  [production current-state new-label inherited-features prob-modifier]
-  (let [[next-sem, ^double next-sem-p] (sem-for-next (zp/node current-state))]
+  [production current-state new-label inherited-features prob-modifier is-head]
+  (let [[next-sem, ^double next-sem-p] (sem-for-next
+                                         current-state
+                                         is-head)]
     [(append-and-go-to-child
        current-state
        (tree-node
@@ -274,7 +297,9 @@
         (if (or (term-sym? new-label) (get-in pcfg [new-label :lex-node]))
           (if (or (nil? possible-word-posses)
                    (contains? possible-word-posses new-label))
-            (let [[next-sem, ^double next-sem-p] (sem-for-next current-node)]
+            (let [[next-sem, ^double next-sem-p] (sem-for-next
+                                                   current-state
+                                                   is-head)]
               [[[(append-and-go-to-child
                    current-state
                    (tree-node new-label nil [] next-features next-sem))
@@ -298,7 +323,8 @@
                  current-state
                  new-label
                  next-features
-                 prob-modifier)
+                 prob-modifier
+                 is-head)
                new-productions)]
             )
       )))
@@ -427,7 +453,7 @@
         entry-lambda (:lambda node-sem)
         cur-arg (:cur-arg node-sem)
         node-sem (if (or surface-only-lambda?
-                         ; TODO: part of temp hack to not add the lex-sem-var in
+                         ; TODO: part of hack to not add the lex-sem-var in
                          ; when we've already used it in a surface-only? lambda
                          (contains? (:lex-vals node-sem) lex-sem-var))
                    node-sem
@@ -458,8 +484,8 @@
   ; or just because it gets updated so much that map is somehow more
   ; efficient.
   ; TODO: look into trying again with the NodeSem below
-  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda])
-  {:cur-var :v0, :val {}})
+  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda val-heads])
+  {:cur-var :v0, :val {}, :val-heads {}})
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
