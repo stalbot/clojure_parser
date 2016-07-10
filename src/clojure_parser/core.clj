@@ -20,7 +20,7 @@
   ([label production children features]
    (tree-node label production children features nil))
   ([label production children features semantics]
-   (TreeNode. label production children features semantics)))
+   (->TreeNode label production children features semantics)))
 
 (defn term-sym? [sym-str]
   (not= (first sym-str) \$))
@@ -450,7 +450,15 @@
     [node-sem, (fast-mult p-adj add-adj-prob)]
     ))
 
+
 (def first-sem
+  ; NOTE: this semantic 'record' should in fact probably be a record!
+  ; When I tried to swap it out, it led to a ~15% perf degredation.
+  ; not sure if that was due to an errant non-record field access,
+  ; or just because it gets updated so much that map is somehow more
+  ; efficient.
+  ; TODO: look into trying again with the NodeSem below
+  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda])
   {:cur-var :v0, :val {}})
 
 (defn create-first-states

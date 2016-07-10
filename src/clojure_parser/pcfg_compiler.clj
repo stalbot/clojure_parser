@@ -6,9 +6,9 @@
 
 (defn lambda
   ([form remaining-idxs target-idx]
-    (Lambda. form remaining-idxs target-idx nil))
+    (->Lambda form remaining-idxs target-idx nil))
   ([form remaining-idxs target-idx surface-only?]
-    (Lambda. form remaining-idxs target-idx (if surface-only? true))))
+    (->Lambda form remaining-idxs target-idx (if surface-only? true))))
 
 (defn parse-raw-json-data [json-str]
   (json/read-str
