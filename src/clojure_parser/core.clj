@@ -463,7 +463,9 @@
    node-sem -> the existing semantics of the parse, to be augmented"
   (let [entry-lambda (:lambda node-sem)
         lex-sem-var (lex-var-for-sem node-sem)
-        surface-only-lambda? (and entry-lambda (:surface-only? entry-lambda))
+        surface-only-lambda? (and entry-lambda
+                                  (not (empty? (:remaining-idxs entry-lambda)))
+                                  (:surface-only? entry-lambda))
         node-sem (declare-lambda-on-sem entry-lambda node-sem lex-sem-var)
         entry-lambda (:lambda node-sem)
         cur-arg (:cur-arg node-sem)
