@@ -197,12 +197,15 @@
       )))
 
 (defn declare-lambda-on-sem [entry-lambda node-sem lex-sem-var]
-  (let [entry-lambda (if entry-lambda
+  (let [entry-lambda (if (and entry-lambda
+                              ; handle a full lambda sticking around
+                              (-> entry-lambda :remaining-idxs empty? not))
                        (assoc-in entry-lambda
                                  [:form (get entry-lambda :target-idx 0)]
                                  (if (:surface-only? entry-lambda)
                                    lex-sem-var
-                                   (:cur-var node-sem))))]
+                                   (:cur-var node-sem)))
+                       entry-lambda)]
     (if entry-lambda
       (assoc node-sem :lambda entry-lambda)
       node-sem)))
@@ -474,7 +477,6 @@
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
         node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)
-
         [node-sem p-adj] (cond
                            (and entry-lambda
                                 (empty? (:remaining-idxs entry-lambda)))
