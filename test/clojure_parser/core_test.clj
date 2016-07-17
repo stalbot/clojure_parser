@@ -117,7 +117,7 @@
 
 (deftest test-get-successor-states
   (let [successors (get-successor-states
-                     compiled-pcfg-for-test
+                     glob-data-for-test
                      tnode
                      1.0
                      nil)]
@@ -147,7 +147,7 @@
                        zp/down
                        (zp/edit #(assoc %1 :features {:plural true})))
         successor (get-successor-states
-                    compiled-pcfg-for-test
+                    glob-data-for-test
                     with-feature
                     1.0
                     nil)]
@@ -164,7 +164,7 @@
   ; when it hits min probability, etc.
   ; and now even more! test this crap
   (let [child (-> realistic-tnode zp/down zp/down)
-        learned (infer-possible-states compiled-pcfg-for-test child (default-beam-size) nil)]
+        learned (infer-possible-states glob-data-for-test child (default-beam-size) nil)]
     (is (= (-> learned first first plain-tree)
            (-> realistic-tnode
                zp/down
@@ -172,12 +172,12 @@
                plain-tree)))
     (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
-        learned (infer-possible-states compiled-pcfg-for-test child 1 nil)]
+        learned (infer-possible-states glob-data-for-test child 1 nil)]
     (is (= (-> learned first first zp/root :children second :production :elements count)
            1))  ; make sure we got the higher-probability $V production as the only one
     (is (approx= (first (map second learned)) 1.0)))
   (let [child (-> realistic-tnode zp/down (zp/edit #(dissoc % :production)))
-        learned (infer-possible-states compiled-pcfg-for-test child 2 nil)]
+        learned (infer-possible-states glob-data-for-test child 2 nil)]
     (is (= (->> learned
                 (map first)
                 (map #(-> % zp/root :children second :production :elements count)))
@@ -639,11 +639,14 @@
 (def tree-node-with-lambda
   (let [tmp (tree-node
               "el1"
-              {:sem [{} {} {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]}
+              {:sem [{} {} {:op-type :call-lambda,
+                            :arg-idx 1,
+                            :target-idx 2,
+                            :inherit-var true}]}
               [{:sem {:cur-var :v3}}
                {:sem {:val {:v0 #{"stuff"}, :v1 #{}, :v2 #{}, :v3 #{}},
                       :cur-var :v3,
-                      :lambda {:form ["a_verb" :v0 nil], :remaining-idxs [2]}}}]
+                      :lambda {:form [:v1 :v0 nil], :remaining-idxs [2]}}}]
               {}
               {:cur-var :v3})]
   (assoc tmp :sem (sem-for-parent tmp))))
@@ -657,31 +660,49 @@
   (assoc example-parent-tree-node :sem (sem-for-parent example-parent-tree-node)))
 
 (deftest test-sem-for-next
+  ; note: passing '{}' here for glob data since it doesn't/shouldn't matter
+  ; for this test
   (let [eptn1-zp (mk-traversable-tree example-parent-tree-node1)]
-    (is (= (:cur-var (first (sem-for-next eptn1-zp false)))
+    (is (= (:cur-var (first (sem-for-next {} eptn1-zp false)))
            :v1))
-    (is (= (:val (first (sem-for-next eptn1-zp false)))
+    (is (= (:val (first (sem-for-next {} eptn1-zp false)))
            (get-in example-parent-tree-node1 [:children 1 :sem :val])))
-    (is (= (:val-heads (first (sem-for-next eptn1-zp true)))
+    (is (= (:val-heads (first (sem-for-next {} eptn1-zp true)))
            {:v1 [:s3 0]}))
     (is (= (:val-heads (first (sem-for-next
+                                {}
                                 (zp/edit
                                   eptn1-zp
                                   #(assoc-in % [:sem :val-heads :v1] [:s2 1]))
                                 true)))
            {:v1 [:s3 0]}))
     (is (= (:val-heads (first (sem-for-next
+                                {}
                                 (zp/edit
                                   eptn1-zp
                                   #(assoc-in % [:sem :val-heads :v1] [:s2 0]))
                                 true)))
            {:v1 [:s2 0]}))
     (let [[next _] (sem-for-next
+                     glob-data-for-test
                      (mk-traversable-tree tree-node-with-lambda)
                      false)]
       (is (= (:lambda next) nil))
-      (is (= (-> next :val :v0) #{"stuff", ["a_verb" :v0 :v4]}))
-      (is (= (-> next :val :v4) #{["a_verb" :v0 :v4]}))
+      (is (= (-> next :val :v0) #{"stuff", [:v1 :v0 :v3]}))
+      (is (= (-> next :val :v3) #{[:v1 :v0 :v3]}))
+      )
+    (let [without-inherit (zp/edit
+                            (mk-traversable-tree tree-node-with-lambda)
+                            #(assoc-in %
+                                       [:production :sem 2 :inherit-var]
+                                       false))
+          [next _] (sem-for-next
+                     glob-data-for-test
+                     without-inherit
+                     false)]
+      ; should not fully resolve the lambda when :v4 (newly created b/c no
+      ; inherit) does not have any info associated with it yet
+      (is (= (-> next :lambda :form) [:v1 :v0 :v4]))
       )
     ))
 
@@ -793,7 +814,9 @@
             glob-data-test-sems-features
             '("person" "walk" "face")))))
   (is (=
-        [{:v0 #{[:v1 :v0 :v2] :s0}, :v1 #{[:v1 :v0 :v2] :s1}, :v2 #{:s2 :s3 [:v1 :v0 :v2]}}
+        [{:v0 #{[:v1 :v0 :v2] :s0},
+          :v1 #{[:v1 :v0 :v2] :s1},
+          :v2 #{:s2 :s3 [:v1 :v0 :v2]}}
          {:s0 {"person.n.01" 1.0}, :s1 {"chase.v.01" 1.0},
           :s3 {"face.n.01" 1.0}, :s2 {"person.n.01" 1.0}}]
         (extract-first-sem-vals-from-parse

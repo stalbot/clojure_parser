@@ -2,7 +2,8 @@
   (:require [clojure.data.priority-map :refer [priority-map-by]]
             [clojure.zip :as zp]
             [clojure-parser.utils :refer :all]
-            [clojure-parser.sem-prob-query :refer [probs-for-new-lex-var]]
+            [clojure-parser.sem-prob-query :refer [probs-for-new-lex-var
+                                                   probs-for-new-relation]]
             [clojure.set :refer [difference]]))
 
 ; these are going to be used in inner loops, so bind them in as macros
@@ -50,7 +51,7 @@
 (defn pcfg-node-opts-for-child [node child-idx]
   (get-in node [:production :sem child-idx]))
 
-(defn resolve-full-lambda [next-sem lamdbda-form]
+(defn resolve-full-lambda [glob-data next-sem lamdbda-form]
   "Given a full lambda from resolve-lambda, sub in the relations
    created by the full lambda to all the relevant semantic variables.
    If it is building a purely surface relation (no :v0 style discourse
@@ -59,40 +60,56 @@
   (let [grouped (group-by is-discourse-var? lamdbda-form)
         vars-for-update (get grouped true [(:cur-var next-sem)])
         vars-in-relations (get grouped false)
+        next-sem (assoc next-sem :lambda nil)
         next-sem (assoc
                    next-sem
                    :lex-vals
                    (reduce #(assoc %1 %2 (get %1 %2))
                            (:lex-vals next-sem)
-                           vars-in-relations))]
-    [(reduce
-       (fn [next-sem var]
-         (update-in
-           next-sem
-           [:val var]
-           #(difference (conj (or %1 #{}) lamdbda-form)
-                        vars-in-relations)))
-       next-sem
-       vars-for-update),
-     1.0]
+                           vars-in-relations))
+        next-sem (reduce
+                   (fn [next-sem var]
+                     (update-in
+                       next-sem
+                       [:val var]
+                       #(difference (conj (or %1 #{}) lamdbda-form)
+                                    vars-in-relations)))
+                   next-sem
+                   vars-for-update)]
+    (probs-for-new-relation glob-data lamdbda-form next-sem)
     ))
 
-(defn resolve-lambda [next-sem lambda lambda-idx lambda-arg]
+(defn resolve-lambda [glob-data next-sem lambda lambda-idx lambda-arg]
   "Given a lambda record, and a new lambda-arg to call the lambda with,
    along with the index that the arg should be subbed into, 'call' the
    lambda and add any completed constituents into the semantics of the
    parse tree if it's full."
   (let [subbed-lambda (assoc-in lambda [:form lambda-idx] lambda-arg)
         remaining-idxs (remove #(= % lambda-idx) (:remaining-idxs lambda))]
-    (if (empty? remaining-idxs)
-      (resolve-full-lambda (assoc next-sem :lambda nil) (:form subbed-lambda))
+    (if (and (empty? remaining-idxs)
+             ; don't resolve if we're not ready yet
+             (every? #(get-in next-sem [:val %]) (:form subbed-lambda)))
+      (resolve-full-lambda glob-data
+                           next-sem
+                           (:form subbed-lambda))
       [(assoc
          next-sem
          :lambda
          (assoc subbed-lambda :remaining-idxs remaining-idxs)),
        1.0])))
 
-(defn call-lambda [next-sem cur-node op]
+(defn lex-var-for-sem [sem]
+  "This method is to enforce the slightly hacky rules around adding
+   lexical vars (e.g. :s1) to a semantic record. In order to add the
+   lex var without a downstream func sticking it in the :val, we mark it as nil
+   in the :lex-vals of the semantic record -> need to check for that"
+  (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
+    (if (and (contains? (:lex-vals sem) key1)
+             (nil? (get-in sem [:lex-vals key1])))
+      key1
+      (keyword (str "s" (count (:lex-vals sem)))))))
+
+(defn call-lambda [glob-data next-sem cur-node op]
   "A wrapper around resolve-lambda that can pass in the right info
    from the context of a partially completed step to the next semantic
    element while walking the parse tree."
@@ -106,7 +123,7 @@
         ; on us, not our child. TODO: that sucks, make it all better
         lambda (or (-> cur-node :children (nth arg-idx) :sem :lambda)
                    (:lambda (:sem cur-node)))]
-    (resolve-lambda next-sem lambda lambda-idx lambda-arg)))
+    (resolve-lambda glob-data next-sem lambda lambda-idx lambda-arg)))
 
 (defn complete-condition [next-sem cur-node operation]
   ; TODO: this isn't really tested, not sure it's needed
@@ -134,18 +151,10 @@
       (vals arg-map))
     ))
 
-(defn- lex-var-for-sem [sem]
-  "This method is to enforce the slightly hacky rules around adding
-   lexical vars (e.g. :s1) to a semantic record. In order to add the
-   lex var without a downstream func sticking it in the :val, we mark it as nil
-   in the :lex-vals of the semantic record -> need to check for that"
-  (let [key1 (keyword (str "s" (- (count (:lex-vals sem)) 1)))]
-    (if (and (contains? (:lex-vals sem) key1)
-             (nil? (get-in sem [:lex-vals key1])))
-      key1
-      (keyword (str "s" (count (:lex-vals sem)))))))
-
 (defn- sem-for-head [cur-state node-sem]
+  "Given that we're on a head node, add an entry designating the head.
+   As a temporary thing that will probably last way too long, break
+   ties with multiple heads by depth in the tree."
   (let [^long cur-depth (zp-depth cur-state)
         cur-var (:cur-var node-sem)
         existing-depth (-> node-sem :val-heads (get cur-var) second)]
@@ -158,7 +167,7 @@
         [(lex-var-for-sem node-sem) cur-depth]))
     ))
 
-(defn sem-for-next [cur-state is-head]
+(defn sem-for-next [glob-data cur-state is-head]
   "Given a node with zero or more children, get the sem for the next
    (or first) child. Look up the relevant semantic entries and complete
    any conditions, lambdas, or arg passing that needs to happen."
@@ -176,7 +185,7 @@
                    next-sem)
         ]
     (condp = (:op-type operation)
-      :call-lambda (call-lambda next-sem cur-node operation)
+      :call-lambda (call-lambda glob-data next-sem cur-node operation)
       :lambda-declare [(assoc next-sem :lambda (:lambda operation)), 1.0]
       :pass-arg [(assoc next-sem
                    :cur-arg
@@ -224,8 +233,10 @@
       (with-new-discourse-var new-parent-sem))))
 
 (defn get-successor-child-state
-  [production current-state new-label inherited-features prob-modifier is-head]
+  ; TODO: this function has become silly
+  [glob-data production current-state new-label inherited-features prob-modifier is-head]
   (let [[next-sem, ^double next-sem-p] (sem-for-next
+                                         glob-data
                                          current-state
                                          is-head)]
     [(append-and-go-to-child
@@ -279,8 +290,9 @@
     ))
 
 (defn get-successor-states
-  [pcfg current-state current-prob possible-word-posses]
-  (let [current-node (zp/node current-state)
+  [glob-data current-state current-prob possible-word-posses]
+  (let [pcfg (:pcfg glob-data)
+        current-node (zp/node current-state)
         num-children (-> current-node :children count)
         production (:production current-node)]
     (if (or (nil? production)
@@ -298,6 +310,7 @@
           (if (or (nil? possible-word-posses)
                    (contains? possible-word-posses new-label))
             (let [[next-sem, ^double next-sem-p] (sem-for-next
+                                                   glob-data
                                                    current-state
                                                    is-head)]
               [[[(append-and-go-to-child
@@ -319,6 +332,7 @@
             [[]
              (map
                #(get-successor-child-state
+                 glob-data
                  %1
                  current-state
                  new-label
@@ -327,9 +341,7 @@
                  is-head)
                new-productions)]
             )
-      )))
-    )
-  )
+      )))))
 
 (defn pos-start-state [lex-state]
   "Takes the state at a lex node and does the necessary steps to make it a
@@ -363,7 +375,7 @@
    which shouldn't happen in practice). Assumes that the active state
    is a tree already zipped down to the rightmost lexical node. I guess
    this is a form of A* search, if we want to be fancy about it."
-  [pcfg, current-state, ^long beam-size, possible-word-posses]
+  [glob-data, current-state, ^long beam-size, possible-word-posses]
   (renormalize-trans-probs!
     (loop [frontier (fast-pq (pos-start-state current-state) 1.0)
            found (transient [])
@@ -373,7 +385,7 @@
         found
         (let [[[current-state current-prob] remainder] (fast-pq-pop! frontier)]
           (let [[for-found for-frontier] (get-successor-states
-                                           pcfg
+                                           glob-data
                                            current-state
                                            current-prob
                                            possible-word-posses)
@@ -461,21 +473,31 @@
                      node-sem
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
-        [node-sem p-adj] (if (and cur-arg entry-lambda)
-                               (resolve-lambda
-                                 node-sem
-                                 entry-lambda
-                                 1
-                                 cur-arg)
-                               [node-sem, 1.0])
         node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)
+
+        [node-sem p-adj] (cond
+                           (and entry-lambda
+                                (empty? (:remaining-idxs entry-lambda)))
+                             (resolve-full-lambda
+                               glob-data
+                               node-sem
+                               (:form entry-lambda))
+                           (and cur-arg entry-lambda)
+                             (resolve-lambda
+                               glob-data
+                               node-sem
+                               entry-lambda
+                               1
+                               cur-arg)
+                           :else
+                             [node-sem, 1.0])
         [node-sem add-adj-prob] (probs-for-new-lex-var
                                   glob-data
                                   lex-sem-var
-                                  node-sem)        ]
+                                  node-sem)
+        ]
     [node-sem, (fast-mult p-adj add-adj-prob)]
     ))
-
 
 (def first-sem
   ; NOTE: this semantic 'record' should in fact probably be a record!
@@ -754,7 +776,7 @@
     word))
 
 (defn infer-possible-states-mult
-  [pcfg current-states beam-size word-posses]
+  [glob-data current-states beam-size word-posses]
   (take-sorted
     (reduce
       (fn [final-states [states-with-probs, ^double prior-prob]]
@@ -765,7 +787,7 @@
       '()
       (pmap
         (fn [[state, prob]] [(infer-possible-states
-                               pcfg
+                               glob-data
                                state
                                beam-size
                                word-posses)
@@ -785,7 +807,7 @@
   [glob-data current-states partial-word]
   (let [{:keys [pcfg lexical-lkup]} glob-data
         next-possible-states (infer-possible-states-mult
-                               pcfg
+                               glob-data
                                current-states
                                10
                                nil)
@@ -839,7 +861,7 @@
   (let [{:keys [pcfg lexical-lkup]} glob-data
         word-posses (possible-pos-for-word pcfg lexical-lkup word)
         next-possible-states (infer-possible-states-mult
-                               pcfg
+                               glob-data
                                current-states
                                beam-size
                                word-posses)]

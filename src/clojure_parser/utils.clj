@@ -116,7 +116,9 @@
       (filter (fn [[_ v]] (not= v 0.0)) trans-prob-map))))
 
 (defn renormalize-trans-prob-map!
-  "Similar to renormalize-trans-probs!, but specially optimized for maps"
+  "Similar to renormalize-trans-probs!, but specially optimized to
+   take a transient map and return a persistent map without duplicating
+   the data structure"
   [trans-prob-map]
   (let [pers-prob-map (persistent! trans-prob-map)
         total (->> pers-prob-map vals (reduce +))]
