@@ -4,7 +4,7 @@
             [clojure-parser.core :refer [parse-sentence-fragment
                                          parse-word
                                          autocomplete-parse]]
-            [clojure-parser.pcfg-container :refer [global-lex-and-pcfg]]))
+            [clojure-parser.pcfg-container :refer [cached-global-data]]))
 
 (defmacro min-cached-size [] 4)
 (defmacro default-beam-size [] 100)
@@ -44,13 +44,11 @@
               next-word-list-size (count next-word-list) ; if < min-cached-size
               next-parse (if (<= next-word-list-size (min-cached-size))
                            (parse-sentence-fragment
-                             (second (global-lex-and-pcfg))
-                             (first (global-lex-and-pcfg))
+                             (cached-global-data)
                              next-word-list
                              (default-beam-size))
                            (parse-word
-                             (second (global-lex-and-pcfg))
-                             (first (global-lex-and-pcfg))
+                             (cached-global-data)
                              (:current-states parse-record)
                              (last next-word-list)
                              (default-beam-size)))
@@ -101,8 +99,7 @@
                            full-word-list))]
       (mapv first
             (autocomplete-parse
-              (second (global-lex-and-pcfg))
-              (first (global-lex-and-pcfg))
+              (cached-global-data)
               parse-states
               word-for-autocomplete)))))
 

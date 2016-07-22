@@ -1,5 +1,6 @@
 (ns clojure-parser.pcfg-container
-  (:require [clojure-parser.pcfg-compiler :refer :all]))
+  (:require [clojure-parser.pcfg-compiler :refer :all]
+            [clojure-parser.utils :refer [global-data]]))
 
 (def super-realistic-pcfg
   {
@@ -42,13 +43,12 @@
 (defn global-lexicon []
   (load-lex-from-wn-path "resources/wordnet_as_json"))
 
-(defn global-lex-and-pcfg' []
+(defn cached-global-data' []
   (println "Building large lexicon and pcfg, please be patient...")
   (let [raw-lex (global-lexicon)
-        result [(make-lexical-lkup raw-lex)
-                (build-operational-pcfg (lexicalize-pcfg super-realistic-pcfg raw-lex))]]
-    (println "finished building result of sizes " (mapv count result))
+        result (glob-data-from-raw super-realistic-pcfg raw-lex)]
+    (println "finished building result of sizes " (mapv count (vals result)))
     result)
   )
 
-(def global-lex-and-pcfg (memoize global-lex-and-pcfg'))
+(def cached-global-data (memoize cached-global-data'))

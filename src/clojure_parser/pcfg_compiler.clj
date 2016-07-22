@@ -6,9 +6,9 @@
 
 (defn lambda
   ([form remaining-idxs target-idx]
-    (Lambda. form remaining-idxs target-idx nil))
+    (->Lambda form remaining-idxs target-idx nil))
   ([form remaining-idxs target-idx surface-only?]
-    (Lambda. form remaining-idxs target-idx (if surface-only? true))))
+    (->Lambda form remaining-idxs target-idx (if surface-only? true))))
 
 (defn parse-raw-json-data [json-str]
   (json/read-str
@@ -260,7 +260,7 @@
 
 (def sem-net-syms [:hypernyms :hyponyms])
 
-(defn make-semantic-lkup [lexicon]
+(defn make-semantic-hierarchy [lexicon]
   (reduce-kv
     (fn [sem-lkup syn-name lex-entry]
       (assoc sem-lkup
@@ -355,3 +355,9 @@
       )
     )
   )
+
+(defn glob-data-from-raw [raw-pcfg raw-lexicon]
+  (global-data
+    (build-operational-pcfg
+      (lexicalize-pcfg raw-pcfg raw-lexicon))
+    (make-lexical-lkup raw-lexicon)))

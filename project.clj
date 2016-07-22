@@ -4,6 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :java-source-paths ["src/java"]
+  :jvm-opts ["-Xmx2g"]
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/data.priority-map "0.0.7"]
                  [com.taoensso/sente "1.8.1"]

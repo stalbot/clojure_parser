@@ -94,3 +94,43 @@
 
 (defn plain-tree [thing]
   (-> thing zp/root (extract-stuff [:label :features])))
+
+(defrecord GlobalData [pcfg lexical-lkup sem-hierarcy sem-relation-probs])
+(defn global-data
+  ([pcfg lexical-kup]
+   (GlobalData. pcfg lexical-kup nil nil))
+  ([pcfg lexical-lkup sem-hierarchy sem-relation-probs]
+   (GlobalData. pcfg lexical-lkup sem-hierarchy sem-relation-probs)))
+
+(defn is-discourse-var? [var]
+  (= (second (str var)) \v))
+
+(defn renormalize-trans-probs!
+  "Works on any transient data structure of form [[a N] [b N]] where
+   N is a number -> including maps"
+  [trans-prob-data]
+  (let [trans-prob-map (persistent! trans-prob-data)
+        total (reduce + (map last trans-prob-map))]
+    (map
+      (fn [[k v]] [k (fast-div v total)])
+      (filter (fn [[_ v]] (not= v 0.0)) trans-prob-map))))
+
+(defn renormalize-trans-prob-map!
+  "Similar to renormalize-trans-probs!, but specially optimized to
+   take a transient map and return a persistent map without duplicating
+   the data structure"
+  [trans-prob-map]
+  (let [pers-prob-map (persistent! trans-prob-map)
+        total (->> pers-prob-map vals (reduce +))]
+    (->>
+      pers-prob-map
+      (reduce-kv
+        #(if (= 0.0 %3)
+          (dissoc! %1 %2)
+          (assoc! %1 %2 (fast-div %3 total)))
+        (transient pers-prob-map))
+      persistent!)))
+
+(defn zp-depth [zp-data]
+  ; hack the clojure.zip internals!
+  (-> zp-data second :pnodes count))

@@ -3,23 +3,19 @@
             [clojure-parser.core :refer :all]
             [clojure-parser.pcfg-compiler :refer :all]
             [clojure-parser.utils :refer :all]
-            [clojure-parser.pcfg-container :refer [global-lex-and-pcfg]]
+            [clojure-parser.pcfg-container :refer [cached-global-data]]
             [clojure.zip :as zp]
             [clojure.data :refer [diff]]
             ))
 
 
-(defn lex-for-test [] (first (global-lex-and-pcfg)))
-(defn pcfg-for-test [] (second (global-lex-and-pcfg)))
-
 (deftest dont-blow-up-building-large-structures
-  (is (not= (lex-for-test) (pcfg-for-test))))
+  (is (not (nil? (cached-global-data)))))
 
 (defn quick-parse [sentence beam-size]
   (second
     (parse-and-learn-sentence
-      (pcfg-for-test)
-      (lex-for-test)
+      (cached-global-data)
       (clojure.string/split (clojure.string/lower-case sentence), #" ")
       beam-size
       false)))
