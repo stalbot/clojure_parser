@@ -134,3 +134,20 @@
 (defn zp-depth [zp-data]
   ; hack the clojure.zip internals!
   (-> zp-data second :pnodes count))
+
+(defn assoc-in! [d ks v]
+  (let [k (first ks)
+        ks (rest ks)
+        v (if (empty? ks) v (assoc-in (get d k) ks v))]
+    (assoc! d k v)))
+
+(defn update! [d k f]
+  (assoc! d k (f (get d k)))
+  )
+
+(defn update-in! [d ks f]
+  (let [k (first ks)
+        ks (rest ks)]
+    (if (empty? ks)
+      (update! d k f)
+      (assoc! d k (update-in (get d k) ks f)))))
