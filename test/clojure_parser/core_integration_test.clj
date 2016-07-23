@@ -3,6 +3,7 @@
             [clojure-parser.core :refer :all]
             [clojure-parser.pcfg-compiler :refer :all]
             [clojure-parser.utils :refer :all]
+            [clojure-parser.generator :refer :all]
             [clojure-parser.pcfg-container :refer [cached-global-data]]
             [clojure.zip :as zp]
             [clojure.data :refer [diff]]
