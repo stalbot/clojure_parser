@@ -227,7 +227,8 @@
            {:val {:v0 #{:s0}},
             :cur-var :v0,
             :lex-vals {:s0 {"face.n.01" 1.0}},
-            :val-heads {}}))
+            :val-heads {},
+            :lex-features {:s0 {:plural false}}}))
     )
   (let [inferred (infer-initial-possible-states
                    glob-data-for-test

@@ -455,7 +455,7 @@
     (assoc parent
       :features parent-features)))
 
-(defn sem-for-lex-node [glob-data syns node-sem]
+(defn sem-for-lex-node [glob-data syns node-sem features]
   "Update the semantic info for a new lexical entry.
 
    syns -> map of each synset to probability
@@ -479,6 +479,7 @@
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
         node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)
+        node-sem (assoc-in node-sem [:lex-features lex-sem-var] features)
         [node-sem p-adj] (cond
                            (and entry-lambda
                                 (empty? (:remaining-idxs entry-lambda)))
@@ -510,8 +511,8 @@
   ; or just because it gets updated so much that map is somehow more
   ; efficient.
   ; TODO: look into trying again with the NodeSem below
-  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda val-heads])
-  {:cur-var :v0, :val {}, :val-heads {}})
+  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda val-heads lex-features])
+  {:cur-var :v0, :val {}, :val-heads {}, :lex-features {}})
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
@@ -522,7 +523,7 @@
     (for
       [[features pos syns prob]
        (synsets-split-by-function glob-data word)]
-      (let [[start-sem _] (sem-for-lex-node glob-data syns first-sem)
+      (let [[start-sem _] (sem-for-lex-node glob-data syns first-sem features)
             lex-node (tree-node word nil nil features start-sem)]
         [(tree-node pos nil [lex-node] features start-sem)
          prob]))))
@@ -619,7 +620,7 @@
               (not (features-match (:features node) features)))
         nil
         (let [[new-sem, ^double sem-prob-adj]
-              (sem-for-lex-node glob-data syns (:sem node))]
+              (sem-for-lex-node glob-data syns (:sem node) features)]
           [(ret-val-maker state word features new-sem)
            (* prob-adj prob sem-prob-adj)])
        ))))
@@ -900,3 +901,5 @@
          pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
      [pcfg parses]
      )))
+
+
