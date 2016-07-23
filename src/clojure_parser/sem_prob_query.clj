@@ -25,7 +25,7 @@
 (defn zeroed-transient-map [keys]
   (transient (zipmap keys (repeat 0.0))))
 
-(defn probs-for-ref-type-2-lex-vars!
+(defn probs-for-ref-type-2-lex-vars
   [ref-type glob-data node-sem lv1 lv2]
   (let [{:keys [sem-hierarchy sem-relation-probs]} glob-data
         syn-entry1 (get-in node-sem [:lex-vals lv1])
@@ -78,16 +78,13 @@
                 ))
             ))
         ]
-    [(update!
-       node-sem
-       :lex-vals
-       #(assoc %
-         lv1 syn-entry1
-         lv2 syn-entry2))
+    [(-> node-sem
+         (assoc-in [:lex-vals lv1] syn-entry1)
+         (assoc-in [:lex-vals lv2] syn-entry2))
      adj-prob]
     ))
 
-(defn probs-for-mutual-reference!
+(defn probs-for-mutual-reference
   [glob-data node-sem lex-var other-entry]
   (cond
     (= lex-var other-entry)
@@ -99,7 +96,7 @@
     (coll? other-entry)
       [node-sem 1.0]  ; TODO!
     :else
-      (probs-for-ref-type-2-lex-vars!
+      (probs-for-ref-type-2-lex-vars
         :mutual
         glob-data
         node-sem
@@ -107,14 +104,14 @@
         other-entry)
     ))
 
-(defn probs-for-new-lex-head-var!
+(defn probs-for-new-lex-head-var
   [glob-data lex-var node-sem]
   (loop [cur-entries (get-in node-sem [:val (:cur-var node-sem)])
          node-sem node-sem
          adj-prob 1.0]
     (if (empty? cur-entries)
       [node-sem adj-prob]
-      (let [[node-sem adj-prob-tmp] (probs-for-mutual-reference!
+      (let [[node-sem adj-prob-tmp] (probs-for-mutual-reference
                                       glob-data
                                       node-sem
                                       lex-var
@@ -132,14 +129,14 @@
    (let [var (or var (:cur-var node-sem))]
     (-> node-sem :val-heads (get var) first))))
 
-(defn probs-for-new-lex-var! [glob-data lex-var node-sem]
+(defn probs-for-new-lex-var [glob-data lex-var node-sem]
   (let [head-lex-var (get-head-var node-sem)]
     (if (or (not head-lex-var) (= head-lex-var lex-var))
-      (probs-for-new-lex-head-var!
+      (probs-for-new-lex-head-var
         glob-data
         lex-var
         node-sem)
-      (probs-for-ref-type-2-lex-vars!
+      (probs-for-ref-type-2-lex-vars
         :mutual
         glob-data
         node-sem
@@ -169,7 +166,7 @@
   (let [relation-type (first sem-relation)]
     (if (string? relation-type)  ; it's a 'raw' type, like "on"
       (if (= (count sem-relation) 3)
-        (probs-for-ref-type-2-lex-vars!
+        (probs-for-ref-type-2-lex-vars
           (keyword relation-type)
           glob-data
           node-sem
@@ -187,7 +184,7 @@
             [node-sem prob-adj]
             (let [ref-type (ref-type-from-idx arg-idx)
                   arg-lex-var (lex-var-from-any-var (first arg-vars) node-sem)
-                  [node-sem inner-prob-adj] (probs-for-ref-type-2-lex-vars!
+                  [node-sem inner-prob-adj] (probs-for-ref-type-2-lex-vars
                                               ref-type
                                               glob-data
                                               node-sem

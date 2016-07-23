@@ -2,7 +2,7 @@
   (:require [clojure.data.priority-map :refer [priority-map-by]]
             [clojure.zip :as zp]
             [clojure-parser.utils :refer :all]
-            [clojure-parser.sem-prob-query :refer [probs-for-new-lex-var!
+            [clojure-parser.sem-prob-query :refer [probs-for-new-lex-var
                                                    probs-for-new-relation]]
             [clojure.set :refer [difference]]))
 
@@ -43,15 +43,15 @@
   (get productions_lkup (mapv :label (:elements found-production)))
   )
 
-(defn with-new-discourse-var! [sem]
+(defn with-new-discourse-var [sem]
   (let [sem (or sem {:val {}})
         new-var (keyword (str "v" (count (:val sem))))]
-    (assoc! sem :cur-var new-var)))
+    (assoc sem :cur-var new-var)))
 
 (defn pcfg-node-opts-for-child [node child-idx]
   (get-in node [:production :sem child-idx]))
 
-(defn resolve-full-lambda! [glob-data next-sem lamdbda-form]
+(defn resolve-full-lambda [glob-data next-sem lamdbda-form]
   "Given a full lambda from resolve-lambda, sub in the relations
    created by the full lambda to all the relevant semantic variables.
    If it is building a purely surface relation (no :v0 style discourse
@@ -60,8 +60,8 @@
   (let [grouped (group-by is-discourse-var? lamdbda-form)
         vars-for-update (get grouped true [(:cur-var next-sem)])
         vars-in-relations (get grouped false)
-        next-sem (assoc! next-sem :lambda nil)
-        next-sem (assoc!
+        next-sem (assoc next-sem :lambda nil)
+        next-sem (assoc
                    next-sem
                    :lex-vals
                    (reduce #(assoc %1 %2 (get %1 %2))
@@ -69,7 +69,7 @@
                            vars-in-relations))
         next-sem (reduce
                    (fn [next-sem var]
-                     (update-in!
+                     (update-in
                        next-sem
                        [:val var]
                        #(difference (conj (or %1 #{}) lamdbda-form)
@@ -79,7 +79,7 @@
     (probs-for-new-relation glob-data lamdbda-form next-sem)
     ))
 
-(defn resolve-lambda! [glob-data next-sem lambda lambda-idx lambda-arg]
+(defn resolve-lambda [glob-data next-sem lambda lambda-idx lambda-arg]
   "Given a lambda record, and a new lambda-arg to call the lambda with,
    along with the index that the arg should be subbed into, 'call' the
    lambda and add any completed constituents into the semantics of the
@@ -89,10 +89,10 @@
     (if (and (empty? remaining-idxs)
              ; don't resolve if we're not ready yet
              (every? #(get-in next-sem [:val %]) (:form subbed-lambda)))
-      (resolve-full-lambda! glob-data
-                            next-sem
-                            (:form subbed-lambda))
-      [(assoc!
+      (resolve-full-lambda glob-data
+                           next-sem
+                           (:form subbed-lambda))
+      [(assoc
          next-sem
          :lambda
          (assoc subbed-lambda :remaining-idxs remaining-idxs)),
@@ -109,7 +109,7 @@
       key1
       (keyword (str "s" (count (:lex-vals sem)))))))
 
-(defn call-lambda! [glob-data next-sem cur-node op]
+(defn call-lambda [glob-data next-sem cur-node op]
   "A wrapper around resolve-lambda that can pass in the right info
    from the context of a partially completed step to the next semantic
    element while walking the parse tree."
@@ -123,9 +123,9 @@
         ; on us, not our child. TODO: that sucks, make it all better
         lambda (or (-> cur-node :children (nth arg-idx) :sem :lambda)
                    (:lambda (:sem cur-node)))]
-    (resolve-lambda! glob-data next-sem lambda lambda-idx lambda-arg)))
+    (resolve-lambda glob-data next-sem lambda lambda-idx lambda-arg)))
 
-(defn complete-condition! [next-sem cur-node operation]
+(defn complete-condition [next-sem cur-node operation]
   ; TODO: this isn't really tested, not sure it's needed
   ; aka it's probably broken ;(
   (let [form (:form operation)
@@ -143,7 +143,7 @@
                       arg-map)]
     (reduce
       (fn [next-sem child-idx]
-        (update-in!
+        (update-in
           next-sem
           [:val (get-in cur-node [:children child-idx :sem :cur-var])]
           #(conj %1 subbed-form)))
@@ -151,7 +151,7 @@
       (vals arg-map))
     ))
 
-(defn- sem-for-head! [cur-state node-sem]
+(defn- sem-for-head [cur-state node-sem]
   "Given that we're on a head node, add an entry designating the head.
    As a temporary thing that will probably last way too long, break
    ties with multiple heads by depth in the tree."
@@ -161,57 +161,42 @@
     (if (and existing-depth
              (let [^long e existing-depth] (>= cur-depth e)))
       node-sem
-      (assoc-in!
+      (assoc-in
         node-sem
         [:val-heads cur-var]
         [(lex-var-for-sem node-sem) cur-depth]))
     ))
 
-(def first-sem
-  ; NOTE: this semantic 'record' should in fact probably be a record!
-  ; When I tried to swap it out, it led to a ~15% perf degredation.
-  ; not sure if that was due to an errant non-record field access,
-  ; or just because it gets updated so much that map is somehow more
-  ; efficient.
-  ; TODO: look into trying again with the NodeSem below
-  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda val-heads lex-features])
-  {:cur-var :v0, :val {}, :val-heads {}, :lex-features {}})
-
-(defn sem-for-next' [glob-data cur-state is-head]
+(defn sem-for-next [glob-data cur-state is-head]
   "Given a node with zero or more children, get the sem for the next
    (or first) child. Look up the relevant semantic entries and complete
    any conditions, lambdas, or arg passing that needs to happen."
   (let [cur-node (zp/node cur-state)
         children (into [] (:children cur-node))
         next-index (count children)
-        cur-sem (transient (or (:sem cur-node) first-sem))
+        cur-sem (:sem cur-node)
         operation (pcfg-node-opts-for-child cur-node next-index)
         is-inheriting (:inherit-var operation)
         next-sem (if is-inheriting
                    cur-sem
-                   (with-new-discourse-var! cur-sem))
+                   (with-new-discourse-var cur-sem))
         next-sem (if is-head
-                   (sem-for-head! cur-state next-sem)
+                   (sem-for-head cur-state next-sem)
                    next-sem)
         ]
     (condp = (:op-type operation)
-      :call-lambda (call-lambda! glob-data next-sem cur-node operation)
-      :lambda-declare [(assoc! next-sem :lambda (:lambda operation)), 1.0]
-      :pass-arg [(assoc! next-sem
+      :call-lambda (call-lambda glob-data next-sem cur-node operation)
+      :lambda-declare [(assoc next-sem :lambda (:lambda operation)), 1.0]
+      :pass-arg [(assoc next-sem
                    :cur-arg
                    (get-in children [(:arg-idx operation) :sem :cur-var])
                    :lambda (:lambda operation))
                  1.0]
-      :complete-condition (complete-condition! next-sem cur-node operation)
+      :complete-condition (complete-condition next-sem cur-node operation)
       [next-sem, 1.0] ; default case
       )))
 
-(defn sem-for-next [glob-data cur-state is-head]
-  (let [[sem prob] (sem-for-next' glob-data cur-state is-head)]
-    [(persistent! sem) prob]
-    ))
-
-(defn declare-lambda-on-sem! [entry-lambda node-sem lex-sem-var]
+(defn declare-lambda-on-sem [entry-lambda node-sem lex-sem-var]
   (let [entry-lambda (if (and entry-lambda
                               ; handle a full lambda sticking around
                               (-> entry-lambda :remaining-idxs empty? not))
@@ -222,7 +207,7 @@
                                    (:cur-var node-sem)))
                        entry-lambda)]
     (if entry-lambda
-      (assoc! node-sem :lambda entry-lambda)
+      (assoc node-sem :lambda entry-lambda)
       node-sem)))
 
 (defn sem-for-parent
@@ -230,14 +215,14 @@
    entry we've created up to the parent."
   [parent-node]
   (let [final-child-sem (-> parent-node :children last :sem)
-        new-parent-sem (transient (or final-child-sem first-sem))
+        new-parent-sem final-child-sem
         intitial? (nil? (:sem parent-node))
         operation (pcfg-node-opts-for-child
                     parent-node
                     (- (count (:children parent-node)) 1))
         new-parent-sem (if (and intitial?
                                 (= (:op-type operation) :lambda-declare))
-                         (declare-lambda-on-sem!
+                         (declare-lambda-on-sem
                            (:lambda operation)
                            new-parent-sem
                            (first (keys (:lex-vals new-parent-sem))))
@@ -246,12 +231,9 @@
         cur-var (if inherits?
                   (:cur-var final-child-sem)
                   (:cur-var (:sem parent-node)))]
-    (persistent!
-      (if cur-var
-        (if inherits?
-          new-parent-sem
-          (assoc! new-parent-sem :cur-var cur-var))
-        (with-new-discourse-var! new-parent-sem)))))
+    (if cur-var
+      (if inherits? new-parent-sem (assoc new-parent-sem :cur-var cur-var))
+      (with-new-discourse-var new-parent-sem))))
 
 (defn get-successor-child-state
   ; TODO: this function has become silly
@@ -484,8 +466,7 @@
         surface-only-lambda? (and entry-lambda
                                   (not (empty? (:remaining-idxs entry-lambda)))
                                   (:surface-only? entry-lambda))
-        node-sem (transient (or node-sem first-sem))
-        node-sem (declare-lambda-on-sem! entry-lambda node-sem lex-sem-var)
+        node-sem (declare-lambda-on-sem entry-lambda node-sem lex-sem-var)
         entry-lambda (:lambda node-sem)
         cur-arg (:cur-arg node-sem)
         node-sem (if (or surface-only-lambda?
@@ -493,21 +474,21 @@
                          ; when we've already used it in a surface-only? lambda
                          (contains? (:lex-vals node-sem) lex-sem-var))
                    node-sem
-                   (update-in!
+                   (update-in
                      node-sem
                      [:val (:cur-var node-sem)]
                      #(conj (or %1 #{}) lex-sem-var)))
-        node-sem (assoc-in! node-sem [:lex-vals lex-sem-var] syns)
-        node-sem (assoc-in! node-sem [:lex-features lex-sem-var] features)
+        node-sem (assoc-in node-sem [:lex-vals lex-sem-var] syns)
+        node-sem (assoc-in node-sem [:lex-features lex-sem-var] features)
         [node-sem p-adj] (cond
                            (and entry-lambda
                                 (empty? (:remaining-idxs entry-lambda)))
-                             (resolve-full-lambda!
+                             (resolve-full-lambda
                                glob-data
                                node-sem
                                (:form entry-lambda))
                            (and cur-arg entry-lambda)
-                             (resolve-lambda!
+                             (resolve-lambda
                                glob-data
                                node-sem
                                entry-lambda
@@ -515,13 +496,23 @@
                                cur-arg)
                            :else
                              [node-sem, 1.0])
-        [node-sem add-adj-prob] (probs-for-new-lex-var!
+        [node-sem add-adj-prob] (probs-for-new-lex-var
                                   glob-data
                                   lex-sem-var
                                   node-sem)
         ]
-    [(persistent! node-sem), (fast-mult p-adj add-adj-prob)]
+    [node-sem, (fast-mult p-adj add-adj-prob)]
     ))
+
+(def first-sem
+  ; NOTE: this semantic 'record' should in fact probably be a record!
+  ; When I tried to swap it out, it led to a ~15% perf degredation.
+  ; not sure if that was due to an errant non-record field access,
+  ; or just because it gets updated so much that map is somehow more
+  ; efficient.
+  ; TODO: look into trying again with the NodeSem below
+  ; (defrecord NodeSem [val lex-vals cur-var cur-arg lambda val-heads lex-features])
+  {:cur-var :v0, :val {}, :val-heads {}, :lex-features {}})
 
 (defn create-first-states
   "Creates the all the very initial partial states (no parents, no children)
