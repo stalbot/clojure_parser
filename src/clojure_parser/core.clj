@@ -602,7 +602,9 @@
       )
   ))
 
-(defn features-match
+(defn features-match?
+  "Given two maps of features, do they have any incompatibilities?
+   Aka do they share any keys with different values?"
   [features1 features2]
   (every?
     (fn [[k v]] (or (nil? v)
@@ -617,7 +619,7 @@
     (let [node (zp/node state)
           ^double prob prob]
       (if (or (not= (:label node) pos)
-              (not (features-match (:features node) features)))
+              (not (features-match? (:features node) features)))
         nil
         (let [[new-sem, ^double sem-prob-adj]
               (sem-for-lex-node glob-data syns (:sem node) features)]
@@ -662,7 +664,7 @@
       renormalize-trans-probs!)
     ))
 
-(defn tree-is-filled
+(defn tree-is-filled?
   [state]
   (let [node (zp/node state)]
     (if (> (count (:elements (:production node)))
@@ -670,7 +672,7 @@
       false
       (if (= (:label node) (start-sym))
         true
-        (tree-is-filled (zp/up state))
+        (tree-is-filled? (zp/up state))
         ))))
 
 (defn add-sems-at-eos
@@ -698,7 +700,7 @@
   (renormalize-trans-probs!
     (reduce
       (fn [new-states-and-probs [state prob]]
-        (if (tree-is-filled state)
+        (if (tree-is-filled? state)
           (conj! new-states-and-probs [(add-sems-at-eos pcfg state) prob])
           new-states-and-probs))
       (transient [])

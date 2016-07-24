@@ -30,8 +30,12 @@
   (map #(count (quick-parse % 25)) (repeat times sentence))
   )
 
+(defn warm-up-p [sentence times]
+  (pmap #(count (quick-parse % 25)) (repeat times sentence))
+  )
+
 (deftest some-sentence
-  (quick-parse "cows eat green grass" 50))
+  (is (> (count (quick-parse "cows eat green grass" 50)) 0)))
 
 
 
