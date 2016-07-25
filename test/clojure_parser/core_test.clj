@@ -100,6 +100,17 @@
           ["$AA" 0] 0.3}))
   )
 
+(deftest test-make-pos-lkup
+  ; not a complicated test, but this thing has a pretty straightforward job!
+  (let [pos-lkup (make-pos-lkup compiled-pcfg-for-test)]
+    (is (= pos-lkup
+           {"$S" #{"$A" "$R" "$N" "$V"},
+            "$NP" #{"$A" "$R" "$N"},
+            "$AP" #{"$A" "$R"},
+            "$RP" #{"$R"},
+            "$AA" #{"$A"},
+            "$VP" #{"$A" "$R" "$N" "$V"}}))))
+
 (defn tree-node-tst
   ([label child] (tree-node-tst label child {}))
   ([label child features] (tree-node-tst label child features nil))

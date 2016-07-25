@@ -24,13 +24,15 @@
   (let [with-child (zp/append-child current-state child)]
     (-> with-child zp/down zp/rightmost)))
 
-(defn fast-pq-add! [^EasyPQueue pq [val ^Number sort-val]]
+(defn fast-pq-add! [^EasyPQueue pq [val, ^Number sort-val]]
   (.add pq val sort-val)
   pq)
 
 (defn fast-pq [& keyvals]
   (let [^EasyPQueue java-pq (new EasyPQueue)]
-    (reduce (fn [java-pq val-sort] (fast-pq-add! java-pq val-sort) java-pq)
+    (reduce (fn [java-pq val-sort]
+              (fast-pq-add! java-pq val-sort)
+              java-pq)
             java-pq
             (apply array-map keyvals))))
 
@@ -95,12 +97,16 @@
 (defn plain-tree [thing]
   (-> thing zp/root (extract-stuff [:label :features])))
 
-(defrecord GlobalData [pcfg lexical-lkup sem-hierarcy sem-relation-probs])
+(defrecord GlobalData
+  [pcfg lexical-lkup pos-lkup sem-hierarcy sem-relation-probs])
 (defn global-data
-  ([pcfg lexical-kup]
-   (GlobalData. pcfg lexical-kup nil nil))
-  ([pcfg lexical-lkup sem-hierarchy sem-relation-probs]
-   (GlobalData. pcfg lexical-lkup sem-hierarchy sem-relation-probs)))
+  ; the non-full ones are generally only for testing
+  ([pcfg lexical-lkup]
+   (GlobalData. pcfg lexical-lkup nil nil nil))
+  ([pcfg lexical-lkup pos-lkup]
+   (GlobalData. pcfg lexical-lkup pos-lkup nil nil))
+  ([pcfg lexical-lkup pos-lkup sem-hierarchy sem-relation-probs]
+   (GlobalData. pcfg lexical-lkup pos-lkup sem-hierarchy sem-relation-probs)))
 
 (defn is-discourse-var? [var]
   (= (second (str var)) \v))

@@ -356,8 +356,83 @@
     )
   )
 
+(defn make-pos-lkup [pcfg]
+  (let [pos-nodes (filter #(-> % second :lex-node) pcfg)]
+    (reduce
+      (fn [pos-lkup pos-label]
+        (loop [pos-lkup pos-lkup
+               to-check [pos-label]
+               iters 0]
+          (if (or (>= iters 1000) (empty? to-check))
+            pos-lkup
+            (let [label (first to-check)
+                  parents (->> (get pcfg label) :parents keys (map first))]
+              (println label parents)
+              (recur
+                (reduce
+                  (fn [pos-lkup parent-label]
+                    (update
+                      pos-lkup
+                      parent-label
+                      #(conj (or % #{}) pos-label)))
+                  pos-lkup
+                  parents)
+                (apply conj (rest to-check) parents)
+                (+ iters 1)
+                )
+              )
+            )
+          ))
+      {}
+      (map first pos-nodes))))
+
+(defn- make-pos-lkup' [pcfg pos-lkup parents sym depth]
+  (let [child-labels (->> (get pcfg sym)
+                          :productions
+                          (mapcat :elements)
+                          (map :label)
+                          distinct
+                          (filter #(not (contains? parents %))))
+        grouped (group-by
+                  #(boolean (get-in pcfg [% :lex-node]))
+                  child-labels)
+        pos-labels (get grouped true)
+        other-labels (get grouped false)
+        pos-lkup (reduce
+                   (fn [pos-lkup pos-label]
+                     (reduce
+                       (fn [pos-lkup parent-label]
+                         (update
+                           pos-lkup
+                           parent-label
+                           #(conj (or % #{}) pos-label))
+                         )
+                       pos-lkup
+                       parents)
+                     )
+                   pos-lkup
+                   pos-labels)]
+    (reduce
+      (fn [pos-lkup other-label]
+        (make-pos-lkup'
+          pcfg
+          pos-lkup
+          (conj parents other-label)
+          other-label
+          (+ 1 depth)
+          ))
+      pos-lkup
+      other-labels)
+    ))
+
+(defn make-pos-lkup [pcfg]
+  (make-pos-lkup' pcfg {} #{(start-sym)} (start-sym) 0))
+
 (defn glob-data-from-raw [raw-pcfg raw-lexicon]
-  (global-data
-    (build-operational-pcfg
-      (lexicalize-pcfg raw-pcfg raw-lexicon))
-    (make-lexical-lkup raw-lexicon)))
+  (let [lexicon (future (make-lexical-lkup raw-lexicon))
+        compiled-pcfg (build-operational-pcfg
+                        (lexicalize-pcfg raw-pcfg raw-lexicon))]
+    (global-data
+      compiled-pcfg
+      @lexicon
+      (make-pos-lkup compiled-pcfg))))
