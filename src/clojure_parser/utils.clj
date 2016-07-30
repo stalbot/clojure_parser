@@ -66,8 +66,8 @@
    "r" "$R"
    "c" "$C"
    "d" "$D"
-   "p" "$P"
-   })
+   "p" "$P"})
+
 
 (defn merge-with! [f m1 m2]
   (reduce-kv

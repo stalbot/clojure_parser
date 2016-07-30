@@ -40,8 +40,8 @@
   base on the current state."
   ; TODO: revisit this when making :productions into a better structure
   [productions_lkup found-production]
-  (get productions_lkup (mapv :label (:elements found-production)))
-  )
+  (get productions_lkup (mapv :label (:elements found-production))))
+
 
 (defn with-new-discourse-var [sem]
   (let [sem (or sem {:val {}})
@@ -76,8 +76,8 @@
                                     vars-in-relations)))
                    next-sem
                    vars-for-update)]
-    (probs-for-new-relation glob-data lamdbda-form next-sem)
-    ))
+    (probs-for-new-relation glob-data lamdbda-form next-sem)))
+
 
 (defn resolve-lambda [glob-data next-sem lambda lambda-idx lambda-arg]
   "Given a lambda record, and a new lambda-arg to call the lambda with,
@@ -148,8 +148,8 @@
           [:val (get-in cur-node [:children child-idx :sem :cur-var])]
           #(conj %1 subbed-form)))
       next-sem
-      (vals arg-map))
-    ))
+      (vals arg-map))))
+
 
 (defn- sem-for-head [cur-state node-sem]
   "Given that we're on a head node, add an entry designating the head.
@@ -164,8 +164,8 @@
       (assoc-in
         node-sem
         [:val-heads cur-var]
-        [(lex-var-for-sem node-sem) cur-depth]))
-    ))
+        [(lex-var-for-sem node-sem) cur-depth]))))
+
 
 (defn sem-for-next [glob-data cur-state is-head]
   "Given a node with zero or more children, get the sem for the next
@@ -182,8 +182,8 @@
                    (with-new-discourse-var cur-sem))
         next-sem (if is-head
                    (sem-for-head cur-state next-sem)
-                   next-sem)
-        ]
+                   next-sem)]
+
     (condp = (:op-type operation)
       :call-lambda (call-lambda glob-data next-sem cur-node operation)
       :lambda-declare [(assoc next-sem :lambda (:lambda operation)), 1.0]
@@ -193,8 +193,8 @@
                    :lambda (:lambda operation))
                  1.0]
       :complete-condition (complete-condition next-sem cur-node operation)
-      [next-sem, 1.0] ; default case
-      )))
+      [next-sem, 1.0]))) ; default case
+
 
 (defn declare-lambda-on-sem [entry-lambda node-sem lex-sem-var]
   (let [entry-lambda (if (and entry-lambda
@@ -262,8 +262,8 @@
                      (map (fn [f] [f (get-in last-child [:features f])]))
                      (filter #(-> % second nil? not))
                      (into {}))]
-    (merge carried inherited (:features new-entry)))
-  )
+    (merge carried inherited (:features new-entry))))
+
 
 (defn is-head? [current-node index]
   (let [head-index (:head (:production current-node))]
@@ -288,9 +288,22 @@
                                   :features (get-parent-features
                                               pcfg
                                               (zp/node parent)
-                                              (zp/node current-state))
-                         ))
-    ))
+                                              (zp/node current-state))))))
+
+
+
+(defn prod-prob-adj [pcfg label existing-prob-modifier]
+  "Productions are stored in a pcfg with their raw total counts, and
+   have to be normalized with this adjustment. Gets us that existing
+   number, taking into account an existing-prob-modifier we also want to
+   account for."
+  (let [prod-total (get-in pcfg [label :productions_total])]
+    (if prod-total
+      (fast-mult
+        (fast-div existing-prob-modifier prod-total)
+        (parent-penalty))
+      0)))
+
 
 (defn get-successor-states
   [glob-data current-state current-prob possible-word-posses]
@@ -311,7 +324,7 @@
                             is-head)]
         (if (or (term-sym? new-label) (get-in pcfg [new-label :lex-node]))
           (if (or (nil? possible-word-posses)
-                   (contains? possible-word-posses new-label))
+                  (contains? possible-word-posses new-label))
             (let [[next-sem, ^double next-sem-p] (sem-for-next
                                                    glob-data
                                                    current-state
@@ -321,17 +334,9 @@
                    (tree-node new-label nil [] next-features next-sem))
                  (fast-mult current-prob next-sem-p)]]
                []])
-            [[] []]
-            )
+            [[] []])
           (let [new-productions (get-in pcfg [new-label :productions])
-                prod-total (get-in pcfg [new-label :productions_total])
-                ; handle perverse case when `new-label` has no productions at all
-                ; TODO: may want to warn here -> sign of bad configuration
-                prob-modifier (if prod-total
-                                (fast-mult
-                                  (fast-div current-prob prod-total)
-                                  (parent-penalty))
-                                0)]
+                prob-modifier (prod-prob-adj pcfg new-label current-prob)]
             [[]
              (map
                #(get-successor-child-state
@@ -342,9 +347,8 @@
                  next-features
                  prob-modifier
                  is-head)
-               new-productions)]
-            )
-      )))))
+               new-productions)]))))))
+
 
 (defn pos-start-state [lex-state]
   "Takes the state at a lex node and does the necessary steps to make it a
@@ -400,8 +404,8 @@
                       for-frontier)
               (reduce conj! found for-found)
               (or best-prob (and (-> for-found empty? not)
-                                 (reduce max (map second for-found)))))
-            ))))))
+                                 (reduce max (map second for-found)))))))))))
+
 
 (defn syn-w-counts-for-lem [pcfg [lemma-name lemma-count]]
   (let [lemma-entry (get pcfg lemma-name)
@@ -410,8 +414,8 @@
         synset-entry (get pcfg synset-name)]
     [synset-name
      (update synset-entry :features #(merge % (:features lemma-entry)))
-     lemma-count]
-    ))
+     lemma-count]))
+
 
 (defn synsets-split-by-function' [pcfg lemmas-w-counts]
   "We want to share states across all synsets found for a word that are
@@ -432,8 +436,8 @@
                       (map (fn [[name, _, ^double count]]
                              [name (/ count total-local-count)])
                            syns-to-counts))
-                (/ total-local-count total-count)]))))
-    ))
+                (/ total-local-count total-count)]))))))
+
 
 (defn synsets-split-by-function [glob-data raw-word]
   (let [{:keys [pcfg lexical-lkup]} glob-data
@@ -483,26 +487,26 @@
         [node-sem p-adj] (cond
                            (and entry-lambda
                                 (empty? (:remaining-idxs entry-lambda)))
-                             (resolve-full-lambda
-                               glob-data
-                               node-sem
-                               (:form entry-lambda))
+                           (resolve-full-lambda
+                             glob-data
+                             node-sem
+                             (:form entry-lambda))
                            (and cur-arg entry-lambda)
-                             (resolve-lambda
-                               glob-data
-                               node-sem
-                               entry-lambda
-                               1
-                               cur-arg)
+                           (resolve-lambda
+                             glob-data
+                             node-sem
+                             entry-lambda
+                             1
+                             cur-arg)
                            :else
                              [node-sem, 1.0])
         [node-sem add-adj-prob] (probs-for-new-lex-var
                                   glob-data
                                   lex-sem-var
-                                  node-sem)
-        ]
-    [node-sem, (fast-mult p-adj add-adj-prob)]
-    ))
+                                  node-sem)]
+
+    [node-sem, (fast-mult p-adj add-adj-prob)]))
+
 
 (def first-sem
   ; NOTE: this semantic 'record' should in fact probably be a record!
@@ -558,8 +562,8 @@
     (into (priority-map-gt) (for
                               [[[label index] ^double v] (:parents pcfg-entry)]
                               [[label (get-in pcfg [label :productions index])]
-                               (/ v total)]))
-    ))
+                               (/ v total)]))))
+
 
 (defn infer-initial-possible-states
   "From a start word, builds all the initial states needed for the sentence
@@ -576,31 +580,31 @@
               (fn [[frontier found] [parent-sym prod] ^double prob]
                 (cond
                   (or (>= (count found) beam-size))
-                    (reduced [frontier found])
+                  (reduced [frontier found])
                   (< (* prob current-prob) (min-prob-ratio))
-                    [frontier found]
+                  [frontier found]
                   (= parent-sym (start-sym))
-                    [frontier
-                     (conj!
-                       found
-                       [(make-next-initial-state pcfg current-state parent-sym prod)
-                        (* prob current-prob)])]
+                  [frontier
+                   (conj!
+                     found
+                     [(make-next-initial-state pcfg current-state parent-sym prod)
+                      (* prob current-prob)])]
                   :else
                      [(assoc
                         frontier
                         (make-next-initial-state pcfg current-state parent-sym prod)
                         (* prob current-prob (parent-penalty)))
-                      found]
-                  ))
+                      found]))
+
               [(pop frontier) found]
-              (parents-with-normed-probs pcfg (:label current-state))
-              )]
+              (parents-with-normed-probs pcfg (:label current-state)))]
+
         (if (or (>= (count found) beam-size) (empty? frontier))
           found
-          (recur frontier found)
-          ))
-      )
-  ))
+          (recur frontier found))))))
+
+
+
 
 (defn features-match?
   "Given two maps of features, do they have any incompatibilities?
@@ -610,8 +614,8 @@
     (fn [[k v]] (or (nil? v)
                     (let [val (get features2 k)]
                       (or (nil? val) (= val v)))))
-    features1)
-  )
+    features1))
+
 
 (defn lex-prob-adjuster [ret-val-maker]
   (fn
@@ -624,8 +628,8 @@
         (let [[new-sem, ^double sem-prob-adj]
               (sem-for-lex-node glob-data syns (:sem node) features)]
           [(ret-val-maker state word features new-sem)
-           (* prob-adj prob sem-prob-adj)])
-       ))))
+           (* prob-adj prob sem-prob-adj)])))))
+
 
 (def update-state-prob-with-lex-node
   (lex-prob-adjuster
@@ -637,7 +641,7 @@
            nil
            nil
            features
-         new-sem)))))
+          new-sem)))))
 
 (def update-word-prob-with-lex-info
   (lex-prob-adjuster (fn [_ word _ _] word)))
@@ -651,8 +655,8 @@
       synsets-info
       (map #(update-state-prob-with-lex-node glob-data state prob word %))
       (filter #(not (nil? %)))
-      (into {})))
-    )
+      (into {}))))
+
 
 (defn update-state-probs-for-word
   [glob-data states-and-probs word]
@@ -661,8 +665,8 @@
       states-and-probs
       (pmap #(check-state-against-syn-sets glob-data % synsets-info word))
       (reduce #(merge-with! + %1 %2) (transient {}))
-      renormalize-trans-probs!)
-    ))
+      renormalize-trans-probs!)))
+
 
 (defn tree-is-filled?
   [state]
@@ -672,8 +676,8 @@
       false
       (if (= (:label node) (start-sym))
         true
-        (tree-is-filled? (zp/up state))
-        ))))
+        (tree-is-filled? (zp/up state))))))
+
 
 (defn add-sems-at-eos
   "Starting from the bottom rightmost node, add the semantic elements
@@ -687,8 +691,8 @@
          parent (if (and add-sem parent)
                   (zp/edit parent assoc :sem (sem-for-parent parent-node))
                   parent)]
-     (if parent (add-sems-at-eos pcfg parent add-sem) state)
-     )))
+     (if parent (add-sems-at-eos pcfg parent add-sem) state))))
+
 
 (defn update-state-probs-for-eos
   "When we reach the end of a sentence, we need to traverse all of our
@@ -704,8 +708,8 @@
           (conj! new-states-and-probs [(add-sems-at-eos pcfg state) prob])
           new-states-and-probs))
       (transient [])
-      states-and-probs
-      )))
+      states-and-probs)))
+
 
 (defn reformat-states-as-parses
   [states-and-probs]
@@ -737,9 +741,9 @@
         (update-in
           [child-sym :parents [(:label cur-node) key]]
           update-fn)
-        (update-in [child-sym :parents_total] update-fn))
-    )
-  )
+        (update-in [child-sym :parents_total] update-fn))))
+
+
 
 (defn learn-from-parse
   [pcfg parse prob]
@@ -750,8 +754,8 @@
       (let [cur-node (peek frontier)]
         (recur
           (into (pop frontier) (filter :production (:children cur-node)))
-          (update-pcfg-count pcfg cur-node prob)))))
-  )
+          (update-pcfg-count pcfg cur-node prob))))))
+
 
 (defn learn-from-parses
   "Takes parses weighted by their probability, a pcfg, and
@@ -760,8 +764,8 @@
   (reduce-kv
     learn-from-parse
     pcfg
-    parses-to-probs
-    ))
+    parses-to-probs))
+
 
 (defn take-sorted [states beam-size]
   (->> states
@@ -801,8 +805,8 @@
                              prob])
         ; TODO: need we/should we do this (take) here?
         (take-sorted current-states beam-size)))
-    beam-size)
-  )
+    beam-size))
+
 
 (defn autocomplete-parse
   "Given a partial parse and the beginning of a word, does its best
@@ -829,40 +833,40 @@
                                  reverse)
         ^double total-prob (reduce + (map second possible-word-lkups))]
     (first (reduce
-      (fn [[found, ^double best-prob, ^long best-prob-misses]
-           [word, ^double prob]]
-        (let [found (if (> prob 0.0)
-                      (assoc found word prob)
-                      found)]
-          (if (< prob best-prob)
-            (if (>= best-prob-misses 25)
-              (reduced [found best-prob best-prob-misses])
-              [found best-prob (+ 1 best-prob-misses)])
-            [found prob 0]))
-        )
-      [(priority-map-gt) 0.0 0]
-      (pmap
-        (fn [[[word lkup-entry], ^double prior-prob]]
-          (let [split-by-syn (synsets-split-by-function' pcfg lkup-entry)
-                adj-prob (/ prior-prob total-prob)]
-            [word
-             (->>
-               next-possible-states
-               (mapcat
-                 (fn [[state, ^double state-prob]]
-                   (map #(update-word-prob-with-lex-info
-                          glob-data
-                          state
-                          (* state-prob adj-prob)
-                          word
-                          %)
-                      split-by-syn)))
-               (filter #(-> %))
-               (map second)
-               (reduce +))
-             ]))
-        possible-word-lkups)))
-    ))
+            (fn [[found, ^double best-prob, ^long best-prob-misses]
+                 [word, ^double prob]]
+              (let [found (if (> prob 0.0)
+                            (assoc found word prob)
+                            found)]
+                (if (< prob best-prob)
+                  (if (>= best-prob-misses 25)
+                    (reduced [found best-prob best-prob-misses])
+                    [found best-prob (+ 1 best-prob-misses)])
+                  [found prob 0])))
+
+            [(priority-map-gt) 0.0 0]
+            (pmap
+              (fn [[[word lkup-entry], ^double prior-prob]]
+                (let [split-by-syn (synsets-split-by-function' pcfg lkup-entry)
+                      adj-prob (/ prior-prob total-prob)]
+                  [word
+                   (->>
+                     next-possible-states
+                     (mapcat
+                       (fn [[state, ^double state-prob]]
+                         (map #(update-word-prob-with-lex-info
+                                glob-data
+                                state
+                                (* state-prob adj-prob)
+                                word
+                                %)
+                            split-by-syn)))
+                     (filter #(-> %))
+                     (map second)
+                     (reduce +))]))
+
+              possible-word-lkups)))))
+
 
 (defn parse-word [glob-data current-states word beam-size]
   (let [{:keys [pcfg lexical-lkup]} glob-data
@@ -901,7 +905,7 @@
          parses (reformat-states-as-parses
                   (update-state-probs-for-eos pcfg final-states))
          pcfg (if learn (learn-from-parses pcfg parses) pcfg)]
-     [pcfg parses]
-     )))
+     [pcfg parses])))
+
 
 

@@ -6,8 +6,8 @@
             [clojure.zip :as zp]
             [clojure.data.json :as json]
             [clojure.data :refer [diff]]
-            [clojure-parser.sem-prob-query :refer :all]
-            ))
+            [clojure-parser.sem-prob-query :refer :all]))
+
 
 (def pcfg-for-test
   {
@@ -23,8 +23,8 @@
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
                         {:elements ["$R"], :count 0.7}]}
    "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4, :head 0}
-                        {:elements ["$V"], :count 0.6}]}
-   })
+                        {:elements ["$V"], :count 0.6}]}})
+
 
 (def lexicon-for-test
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
@@ -97,8 +97,8 @@
   (is (= (:parents (get compiled-pcfg-for-test "$A"))
          {["$AA" 1] 0.5,
           ["$AP" 1] 0.4,
-          ["$AA" 0] 0.3}))
-  )
+          ["$AA" 0] 0.3})))
+
 
 (deftest test-make-pos-lkup
   ; not a complicated test, but this thing has a pretty straightforward job!
@@ -119,8 +119,8 @@
               (get-in compiled-pcfg-for-test [label :productions 0])
               child
               features
-              sem))
-  )
+              sem)))
+
 
 (def tnode
   (mk-traversable-tree
@@ -137,8 +137,8 @@
     (is (approx= (-> successors second second last) 0.5625))
     (is (=
           (plain-tree (append-and-go-to-child tnode (tree-node-tst "$AA" [])))
-          (-> successors second first first plain-tree)
-          ))
+          (-> successors second first first plain-tree)))
+
     (is (=
           (plain-tree
             (append-and-go-to-child
@@ -147,9 +147,9 @@
                 "$AA"
                 (get-in compiled-pcfg-for-test ["$AA" :productions 1])
                 [])))
-          (-> successors second last first plain-tree)
-          ))
-    ))
+          (-> successors second last first plain-tree)))))
+
+
 
 
 (deftest test-get-successor-states-with-features
@@ -163,8 +163,8 @@
                     1.0
                     nil)]
     (is (= (-> successor second first first zp/node :features) {:plural true}))
-    (is (= (-> successor second second first zp/node :features) {:plural true}))
-  ))
+    (is (= (-> successor second second first zp/node :features) {:plural true}))))
+
 
 (def realistic-tnode
   (mk-traversable-tree
@@ -194,8 +194,8 @@
                 (map #(-> % zp/root :children second :production :elements count)))
            [1 2]))
     (is (approx= (first (map second learned)) 0.6))
-    (is (approx= (second (map second learned)) 0.4))
-    ))
+    (is (approx= (second (map second learned)) 0.4))))
+
 
 (def ambiguous-inferred-state1
   (let [raw (tree-node-tst
@@ -239,8 +239,8 @@
             :cur-var :v0,
             :lex-vals {:s0 {"face.n.01" 1.0}},
             :val-heads {},
-            :lex-features {:s0 {:plural false}}}))
-    )
+            :lex-features {:s0 {:plural false}}})))
+
   (let [inferred (infer-initial-possible-states
                    glob-data-for-test
                    "cool"
@@ -257,8 +257,8 @@
         lex-label (map #(-> %1 zp/up zp/node :label) (keys inferred))]
     (is (= (count inferred) 1))
     (is (= lex-label ["$A"]))
-    (is (approx= (reduce + (vals inferred)) 1.0)))
-  )
+    (is (approx= (reduce + (vals inferred)) 1.0))))
+
 
 (def pre-state-1
   (zp/edit (-> ambiguous-inferred-state1 zp/remove zp/remove)
@@ -285,8 +285,8 @@
                (append-and-go-to-child (tree-node-tst "cool" []))
                zp/root
                (extract-stuff [:label]))))
-    (is (= (map second updated) [0.8 0.2]))
-    ))
+    (is (= (map second updated) [0.8 0.2]))))
+
 
 (def good-parse-for-eos1
   (-> ambiguous-inferred-state1
@@ -326,8 +326,8 @@
            (map #(-> %1 zp/root (extract-stuff [:label :features]))
                 [good-parse-for-eos1 good-parse-for-eos2])))
     (is (approx= (-> updated first second) 0.6))
-    (is (approx= (->> updated (map second) (reduce +)) 1.0))
-  ))
+    (is (approx= (->> updated (map second) (reduce +)) 1.0))))
+
 
 (deftest test-reformat-states-as-parses
   ; kind of a dumb test, but w/e
@@ -345,8 +345,8 @@
     (is (approx= (get-in updated ["$NP" :productions_total]) 1.8))
     (is (approx= (get-in updated ["$NP" :productions 2 :count]) 1.2))
     (is (approx= (get-in updated ["$N" :parents ["$NP" 2]]) 1.2))
-    (is (approx= (get-in updated ["$N" :parents_total]) 1.5))
-    )
+    (is (approx= (get-in updated ["$N" :parents_total]) 1.5)))
+
   (let [updated (update-pcfg-count
                   compiled-pcfg-for-test
                   (tree-node-tst "$S" [(tree-node-tst "$NP" nil) (tree-node-tst "$VP" nil)])
@@ -354,24 +354,24 @@
     (is (= (get-in updated ["$S" :productions_total]) 4.5))
     (is (= (get-in updated ["$S" :productions 0 :count]) 4.5))
     (is (= (get-in updated ["$NP" :parents_total]) 4.5))
-    (is (= (-> (get-in updated ["$NP" :parents]) vals first) 4.5))
-    )
-  )
+    (is (= (-> (get-in updated ["$NP" :parents]) vals first) 4.5))))
+
+
 
 (deftest test-learn-from-parse
   (let [parses (reformat-states-as-parses {good-parse-for-eos1 0.75 good-parse-for-eos2 0.25})
         learned-pcfg1 (apply learn-from-parse
-                      compiled-pcfg-for-test
-                      (first parses))]
+                       compiled-pcfg-for-test
+                       (first parses))]
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$S" :productions]))) 4.75))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$NP" :productions]))) 2.05))
     (is (= (reduce + (map :count (get-in learned-pcfg1 ["$AP" :productions]))) 0.5)) ; should not change
     (let [learned-pcfg2 (apply learn-from-parse
                            learned-pcfg1
                            (-> parses rest first))]
-      (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0))
-      )
-  ))
+      (is (= (reduce + (map :count (get-in learned-pcfg2 ["$S" :productions]))) 5.0)))))
+
+
 
 (deftest test-parse-and-learn-sentence
   (let [parse-result (parse-and-learn-sentence
@@ -380,8 +380,8 @@
         [new-pcfg parses] parse-result]
     (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 2]]) 1.7))
     (is (= (count parses) 1))
-    (is (approx= (reduce + (vals parses)) 1.0))
-    )
+    (is (approx= (reduce + (vals parses)) 1.0)))
+
   (let [parse-result (parse-and-learn-sentence
                        glob-data-for-test
                        '("cool" "cool" "face"))
@@ -391,9 +391,9 @@
     (is (approx= (get-in new-pcfg ["$N" :parents ["$NP" 2]]) 0.7))
     (is (= (reduce + (map :count (get-in new-pcfg ["$S" :productions]))) 5.0))
     (is (= (count parses) 2))
-    (is (approx= (reduce + (vals parses)) 1.0))
-    )
-  )
+    (is (approx= (reduce + (vals parses)) 1.0))))
+
+
 
 ; this is pretty well tested by its wrapper, parse-and-learn-sentence.
 ; mostly a sanity check that the interface doesn't degrade/that we get more
@@ -435,14 +435,14 @@
                   glob-data-with-better-features
                   {in-progress-parse-with-bad-feature 0.5
                    in-progress-parse-with-good-feature 0.5}
-                  "chase"
-                  )]
+                  "chase")]
+
     (is (= (count updated) 1))
     (is (= (second (first updated)) 1.0))
     (is (= (-> updated first first zp/node :features (get :plural)) true))
     (is (= (-> updated first first zp/up zp/node :features (get :plural))
-           true))
-    ))
+           true))))
+
 
 (deftest test-parse-with-real-features
   (let [parse-result (parse-and-learn-sentence
@@ -453,7 +453,7 @@
     (is (= (-> parses first first
                :children first :children first :children first
                :features)
-           {:plural true}) )
+           {:plural true}))
     (is (= (-> parses first first :children first :features) {:plural true}))
     ; TODO: there used to be a test here making sure the appropriate lex
     ; count was updated in the learning -> now that doesn't happen anymore,
@@ -465,9 +465,9 @@
         [new-pcfg parses] parse-result]
     (is (= (count parses) 0))
     ; nothing should have happened
-    (is (= new-pcfg compiled-pcfg-with-better-features))
-    )
-  )
+    (is (= new-pcfg compiled-pcfg-with-better-features))))
+
+
 
 (def more-realistic-pcfg
   {
@@ -486,8 +486,8 @@
    "$RP" {:productions [{:elements ["$R" "$RP"], :count 0.7}
                         {:elements ["$R"], :count 0.7}]}
    "$VP" {:productions [{:elements ["$V" "$NP"], :count 0.4 :head 0}
-                        {:elements ["$V"], :count 0.6}]}
-   })
+                        {:elements ["$V"], :count 0.6}]}})
+
 
 (def more-realistic-glob-data
   (glob-data-from-raw more-realistic-pcfg
@@ -502,16 +502,16 @@
                           '("faces" "chase" "newly" "cool" "person")))))
   (is (empty? (last (parse-and-learn-sentence
                           more-realistic-glob-data
-                          '("face" "chase" "newly" "cool" "person")))))
-  )
+                          '("face" "chase" "newly" "cool" "person"))))))
+
 
 (def pcfg-for-testing-terminal-nodes
   (-> pcfg-for-test
       (assoc "$INF" {:productions [{:elements ["to" "$VP"], :count 0.1}]})
       (update-in ["$NP" :productions] #(conj % {:elements ["$INF"], :count 0.1}))
       (lexicalize-pcfg lexicon-for-test)
-      build-operational-pcfg
-      ))
+      build-operational-pcfg))
+
 
 (def glob-data-for-testing-terminal-nodes
   (global-data pcfg-for-testing-terminal-nodes compiled-lexicon-for-test))
@@ -523,8 +523,8 @@
     (is (= (count (second parse)) 1))
     ; $S -> [$NP $VP] -> [$V $NP] -> [$INF]
     (is (= (-> parse second keys first :children second :children second :children first :label)
-           "$INF"))
-    ))
+           "$INF"))))
+
 
 (def pcfg-with-features-in-prods
   {
@@ -535,8 +535,8 @@
    "$VP" {:productions [{:elements [["$V" {:trans true}] "$NP"],
                          :count 0.4,
                          :head 0}
-                        {:elements [["$V" {:trans false}]], :count 0.6}]}
-   })
+                        {:elements [["$V" {:trans false}]], :count 0.6}]}})
+
 
 (def lexicon-for-testing-features-in-prods
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5, :features {:plural false}}
@@ -569,8 +569,8 @@
   (is (= {:trans true}
          (get-in compiled-prod-pcfg ["chase.v.01" :features])))
   (is (= {}
-         (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features])))
-  )
+         (get-in compiled-prod-pcfg ["$VP" :productions 0 :elements 1 :features]))))
+
 
 (deftest test-parse-of-features-is-correct
   (let [[_ parses] (parse-and-learn-sentence
@@ -578,14 +578,14 @@
                     '("person" "chases" "face"))]
     (is (= 1 (count parses)))
     (is (= {:trans true, :plural false}
-           (-> parses first first :children last :children first :features)))
-    )
+           (-> parses first first :children last :children first :features))))
+
   (let [[_ parses] (parse-and-learn-sentence
                      glob-data-for-features-in-prods
                      '("face" "person" "talks"))]
-    (is (= 1 (count parses)))
-    )
-  )
+    (is (= 1 (count parses)))))
+
+
 
 (deftest test-no-parse-when-blocked-by-features
   (let [[_ parses] (parse-and-learn-sentence
@@ -599,26 +599,26 @@
   (let [[_ parses] (parse-and-learn-sentence
                      glob-data-for-features-in-prods
                      '("face" "person" "talk"))]
-    (is (= 0 (count parses)))
-    )
+    (is (= 0 (count parses))))
+
   (let [[_ parses] (parse-and-learn-sentence
                      glob-data-for-features-in-prods
                      '("person" "chase" "face"))]
-    (is (= 0 (count parses)))
-    )
-  )
+    (is (= 0 (count parses)))))
+
+
 
 (deftest test-nil-features-wont-block-parse
   (let [[_ parses] (parse-and-learn-sentence
                      glob-data-for-features-in-prods
                      '("cool" "talk"))]
-    (is (= 1 (count parses)))
-    )
+    (is (= 1 (count parses))))
+
   (let [[_ parses] (parse-and-learn-sentence
                      glob-data-for-features-in-prods
                      '("person" "face"))]
-    (is (= 1 (count parses)))
-    ))
+    (is (= 1 (count parses)))))
+
 
 (deftest test-feature-causes-correct-synset-choice
   (let [[_ parses] (parse-and-learn-sentence
@@ -629,13 +629,13 @@
            ; since the test PCFG data is all screwy, can't rely on this getting to end ->
            ; have to check it on the lex node itself
            (-> parses first first :children last :children first :children first :sem :lex-vals :s1 keys))))
-    (let [[_ parses] (parse-and-learn-sentence
-                       glob-data-for-features-in-prods
-                       '("person" "walk"))]
-      (is (= 1 (count parses)))
-      (is (= ["walk.v.01"]
-             (-> parses first first :sem :lex-vals :s1 keys)))
-    ))
+  (let [[_ parses] (parse-and-learn-sentence
+                     glob-data-for-features-in-prods
+                     '("person" "walk"))]
+    (is (= 1 (count parses)))
+    (is (= ["walk.v.01"]
+           (-> parses first first :sem :lex-vals :s1 keys)))))
+
 
 (def example-parent-tree-node
   (tree-node
@@ -661,12 +661,12 @@
                       :lambda {:form [:v1 :v0 nil], :remaining-idxs [2]}}}]
               {}
               {:cur-var :v3})]
-  (assoc tmp :sem (sem-for-parent tmp))))
+   (assoc tmp :sem (sem-for-parent tmp))))
 
 (deftest test-sem-for-parent
   (is (= (map #(get (sem-for-parent example-parent-tree-node) %1) [:val :cur-var])
-         [{:v0 #{:s0 [:v0 :v1]} :v1 #{:s1 :s2 [:v0 :v1]}} :v1]))
-  )
+         [{:v0 #{:s0 [:v0 :v1]} :v1 #{:s1 :s2 [:v0 :v1]}} :v1])))
+
 
 (def example-parent-tree-node1
   (assoc example-parent-tree-node :sem (sem-for-parent example-parent-tree-node)))
@@ -701,8 +701,8 @@
                      false)]
       (is (= (:lambda next) nil))
       (is (= (-> next :val :v0) #{"stuff", [:v1 :v0 :v3]}))
-      (is (= (-> next :val :v3) #{[:v1 :v0 :v3]}))
-      )
+      (is (= (-> next :val :v3) #{[:v1 :v0 :v3]})))
+
     (let [without-inherit (zp/edit
                             (mk-traversable-tree tree-node-with-lambda)
                             #(assoc-in %
@@ -714,9 +714,9 @@
                      false)]
       ; should not fully resolve the lambda when :v4 (newly created b/c no
       ; inherit) does not have any info associated with it yet
-      (is (= (-> next :lambda :form) [:v1 :v0 :v4]))
-      )
-    ))
+      (is (= (-> next :lambda :form) [:v1 :v0 :v4])))))
+
+
 
 (def pcfg-with-features-and-sems-in-prods
   {
@@ -737,8 +737,8 @@
                         {:elements [["$V" {:trans false}]],
                          :sem ["&#0" "@0"]
                          :count 0.6}]}
-   "$PP" {:productions [{:elements ["$P" "$NP"] :count 1.0 :sem ["^&#0" "@0" "%1"]}]}
-   })
+   "$PP" {:productions [{:elements ["$P" "$NP"] :count 1.0 :sem ["^&#0" "@0" "%1"]}]}})
+
 
 (def lexicon-for-testing-features-and-sems-in-prods
   {"person.n.01" {:pos "n" :lemmas [{:name "person", :count 5}
@@ -762,8 +762,8 @@
    "and.c.01" {:pos "c" :lemmas [{:name "and" :count 1}]}
    "on.p.01" {:pos "p" :lemmas [{:name "on" :count 1}]}
    "very.r.01" {:pos "r" :lemmas [{:name "very" :count 1}]}
-   "red.a.01" {:pos "a" :lemmas [{:name "red" :count 1}]}
-   })
+   "red.a.01" {:pos "a" :lemmas [{:name "red" :count 1}]}})
+
 
 (def glob-data-test-sems-features
   (glob-data-from-raw
@@ -790,8 +790,8 @@
                  :inherit-var true,
                  :arg-idx 0,
                  :target-idx 1,
-                 :lambda (lambda [nil nil nil] [1 2] 0)
-                 }
+                 :lambda (lambda [nil nil nil] [1 2] 0)}
+
                 {:op-type :call-lambda, :arg-idx 1, :target-idx 2}]])
          (set (map :sem (get-in compiled-pcfg-test-sems-features ["$NP" :productions])))))
   (is (= (set [[{:inherit-var true, :lambda (lambda [nil nil] [1] 0), :op-type :lambda-declare}]
@@ -807,8 +807,8 @@
            :lambda (lambda [nil nil] [1] 0 true)
            :op-type :lambda-declare}
           {:inherit-var true, :surface-only? true, :op-type :call-lambda, :arg-idx 0, :target-idx 1}]
-         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$AP" :productions])))))
-  )
+         (first (map :sem (get-in compiled-pcfg-test-sems-features ["$AP" :productions]))))))
+
 
 (deftest test-parse-with-sems
   (is (=
@@ -871,8 +871,8 @@
         (extract-first-sem-vals-from-parse
           (parse-and-learn-sentence
             glob-data-test-sems-features
-            '("very" "red" "face" "talk")))))
-  )
+            '("very" "red" "face" "talk"))))))
+
 
 (def lexicon-with-sem-net
   {"person.n.01" {:hypernyms ["causal_agent.n.01" "organism.n.01"]
@@ -891,15 +891,15 @@
   (is (= ["actor.n.02" "adult.n.01" "adventurer.n.01"]
          (keys (get-in compiled-sem-net ["person.n.01" :hyponyms]))))
   (is (= [0.3 0.7]
-         (sort (vals (get-in compiled-sem-net ["causal_agent.n.01" :hyponyms])))))
-  )
+         (sort (vals (get-in compiled-sem-net ["causal_agent.n.01" :hyponyms]))))))
+
 
 (deftest test-lex-json-parsing-not-lossy
   (is (= (parse-raw-json-data
            (json/write-str lexicon-for-testing-features-and-sems-in-prods))
          lexicon-for-testing-features-and-sems-in-prods))
   (is (= (parse-raw-json-data
-         (json/write-str lexicon-with-sem-net))
+          (json/write-str lexicon-with-sem-net))
          lexicon-with-sem-net)))
 
 (deftest test-pcfg-json-parsing-not-lossy
@@ -914,8 +914,8 @@
                        "c")]
     ; It should throw out the "chase" autocomplete with 0 probability
     (is (= (map first autocomplete) ["cool"]))
-    (is (> (-> autocomplete first second) 0.0))
-    )
+    (is (> (-> autocomplete first second) 0.0)))
+
   (let [partial (parse-sentence-fragment
                   glob-data-test-sems-features
                   ["person" "chase"]
@@ -925,8 +925,8 @@
                        partial
                        "f")]
     (is (= (map first autocomplete) ["face" "faces"]))
-    (is (every? #(> % 0) (map second autocomplete)))
-    )
-  )
+    (is (every? #(> % 0) (map second autocomplete)))))
+
+
 
 

@@ -9,8 +9,8 @@
   [sem-relation-probs syn-key relation-key]
   ; for now, just a simple get-in: will certainly get more complicated
   ; as we make this a giant 'virtual' data structure that mostly lives on disk
-  (get-in sem-relation-probs [syn-key relation-key])
-  )
+  (get-in sem-relation-probs [syn-key relation-key]))
+
 
 (defn- prob-syn-keys-ref-type
   [ref-type sem-hierarchy sem-relation-probs syn-key1 syn-key2]
@@ -58,51 +58,51 @@
                               sem-hierarchy
                               sem-relation-probs
                               key1
-                              key2)
-                            ]
+                              key2)]
+
                         (recur
                           (assoc!
                             syn-entry2-t
                             key2
                             (+ cur-prob found-prob))
                           (+ inner-adj-prob found-prob)
-                          (+ 1 idx))
-                        )))
-                  outer-adj-prob (* prob1 inner-adj-prob)
-                  ]
+                          (+ 1 idx)))))
+
+                  outer-adj-prob (* prob1 inner-adj-prob)]
+
               (recur
                 (assoc! syn-entry1-t key1 outer-adj-prob)
                 syn-entry2-t
                 (rest syn-entry-keys1)
-                (+ adj-prob outer-adj-prob)
-                ))
-            ))
-        ]
+                (+ adj-prob outer-adj-prob)))))]
+
+
+
     [(-> node-sem
          (assoc-in [:lex-vals lv1] syn-entry1)
          (assoc-in [:lex-vals lv2] syn-entry2))
-     adj-prob]
-    ))
+     adj-prob]))
+
 
 (defn probs-for-mutual-reference
   [glob-data node-sem lex-var other-entry]
   (cond
-    (= lex-var other-entry)
+    (= lex-var other-entry
       ; should happen all the time, since lex-var should already be
       ; in the set we're iterating over
-      [node-sem 1.0]
-    (is-discourse-var? other-entry)
-      [node-sem 1.0]  ; TODO! (also this may not really be a thing)
-    (coll? other-entry)
-      [node-sem 1.0]  ; TODO!
+      [node-sem 1.0])
+    (is-discourse-var? other-entry
+      [node-sem 1.0])  ; TODO! (also this may not really be a thing)
+    (coll? other-entry
+      [node-sem 1.0])  ; TODO!
     :else
       (probs-for-ref-type-2-lex-vars
         :mutual
         glob-data
         node-sem
         lex-var
-        other-entry)
-    ))
+        other-entry)))
+
 
 (defn probs-for-new-lex-head-var
   [glob-data lex-var node-sem]
@@ -119,9 +119,9 @@
         (recur
           (rest cur-entries)
           node-sem
-          (fast-mult adj-prob-tmp adj-prob)))
-      ))
-  )
+          (fast-mult adj-prob-tmp adj-prob))))))
+
+
 
 (defn get-head-var
   ([node-sem] (get-head-var node-sem nil))
@@ -141,8 +141,8 @@
         glob-data
         node-sem
         head-lex-var
-        lex-var)
-      )))
+        lex-var))))
+
 
 (defn lex-var-from-any-var [var node-sem]
   (if (is-discourse-var? var)
@@ -152,8 +152,8 @@
       ; if we didn't have a head var yet, just give back anything!
       ; TODO: this might be super dumb, should maybe just 'pass'
       (first (filter keyword? (get-in node-sem [:val var]))))
-    var ; it's already a lex-var!
-    ))
+    var)) ; it's already a lex-var!
+
 
 (defn- ref-type-from-idx [arg-idx]
   (condp = arg-idx
@@ -171,10 +171,10 @@
           glob-data
           node-sem
           (lex-var-from-any-var (nth sem-relation 1) node-sem)
-          (lex-var-from-any-var (nth sem-relation 2) node-sem)
-          )
-        [node-sem 1.0]  ; TODO: don't know how to handle this case
-        )
+          (lex-var-from-any-var (nth sem-relation 2) node-sem))
+
+        [node-sem 1.0])  ; TODO: don't know how to handle this case
+
       (let [lex-var-for-relation (lex-var-from-any-var relation-type node-sem)]
         (loop [arg-idx 1
                arg-vars (rest sem-relation)
@@ -194,10 +194,10 @@
                 (+ 1 arg-idx)
                 (rest arg-vars)
                 (fast-mult prob-adj inner-prob-adj)
-                node-sem)
-              )
-            )
-          )
-        ))
-    ))
+                node-sem))))))))
+
+
+
+
+
 

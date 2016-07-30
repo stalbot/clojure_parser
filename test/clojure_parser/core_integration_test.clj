@@ -6,8 +6,8 @@
             [clojure-parser.generator :refer :all]
             [clojure-parser.pcfg-container :refer [cached-global-data]]
             [clojure.zip :as zp]
-            [clojure.data :refer [diff]]
-            ))
+            [clojure.data :refer [diff]]))
+
 
 
 (deftest dont-blow-up-building-large-structures
@@ -23,16 +23,16 @@
 
 (defn labels [sentence beam-size]
   (map (fn [[parse prob]] [(extract-stuff parse [:label :features]) (:sem parse) prob])
-       (->> (quick-parse sentence beam-size)
-             )))
+       (->> (quick-parse sentence beam-size))))
+
 
 (defn warm-up [sentence times]
-  (map #(count (quick-parse % 25)) (repeat times sentence))
-  )
+  (map #(count (quick-parse % 25)) (repeat times sentence)))
+
 
 (defn warm-up-p [sentence times]
-  (pmap #(count (quick-parse % 25)) (repeat times sentence))
-  )
+  (pmap #(count (quick-parse % 25)) (repeat times sentence)))
+
 
 (deftest some-sentence
   (is (> (count (quick-parse "cows eat green grass" 50)) 0)))
