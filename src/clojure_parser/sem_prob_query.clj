@@ -87,14 +87,14 @@
 (defn probs-for-mutual-reference
   [glob-data node-sem lex-var other-entry]
   (cond
-    (= lex-var other-entry
-      ; should happen all the time, since lex-var should already be
-      ; in the set we're iterating over
-      [node-sem 1.0])
-    (is-discourse-var? other-entry
-      [node-sem 1.0])  ; TODO! (also this may not really be a thing)
-    (coll? other-entry
-      [node-sem 1.0])  ; TODO!
+    (= lex-var other-entry)
+    ; should happen all the time, since lex-var should already be
+    ; in the set we're iterating over
+    [node-sem 1.0]
+    (is-discourse-var? other-entry)
+    [node-sem 1.0]  ; TODO! (also this may not really be a thing)
+    (coll? other-entry)
+    [node-sem 1.0]  ; TODO!
     :else
       (probs-for-ref-type-2-lex-vars
         :mutual

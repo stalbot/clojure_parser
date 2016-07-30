@@ -237,7 +237,8 @@
 
 (defn get-successor-child-state
   ; TODO: this function has become silly
-  [glob-data production current-state new-label inherited-features prob-modifier is-head]
+  [glob-data production current-state new-label
+   inherited-features prob-modifier is-head]
   (let [[next-sem, ^double next-sem-p] (sem-for-next
                                          glob-data
                                          current-state
