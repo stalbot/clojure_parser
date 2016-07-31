@@ -6,9 +6,9 @@
 
 (defn lambda
   ([form remaining-idxs target-idx]
-    (->Lambda form remaining-idxs target-idx nil))
+   (->Lambda form remaining-idxs target-idx nil))
   ([form remaining-idxs target-idx surface-only?]
-    (->Lambda form remaining-idxs target-idx (if surface-only? true))))
+   (->Lambda form remaining-idxs target-idx (if surface-only? true))))
 
 (defn parse-raw-json-data [json-str]
   (json/read-str
@@ -24,11 +24,11 @@
           syn-name
           (assoc data
             :lemmas
-            (->> data :lemmas vals (into []))))
-        )
+            (->> data :lemmas vals (into [])))))
+
       (transient lex-data)
-      lex-data
-      )))
+      lex-data)))
+
 
 (defn load-lex-from-wn-path [wordnet-path]
   (let [dir (clojure.java.io/file wordnet-path)
@@ -41,9 +41,9 @@
               (merge! lexicon (format-raw-lex-data
                                 (parse-raw-json-data (slurp file)))))
             lexicon
-            (.listFiles (clojure.java.io/file pos-dir))
-            )
-          )
+            (.listFiles (clojure.java.io/file pos-dir))))
+
+
         (transient {})
         top-level-dirs))))
 
@@ -59,9 +59,9 @@
       (let [total (apply + (map :count (:productions node)))]
         (assoc-in new-pcfg [node-name :productions_total] total)))
     pcfg
-    pcfg
-    )
-  )
+    pcfg))
+
+
 
 (defn normalize-pcfg-parents [pcfg]
   (reduce-kv
@@ -70,9 +70,9 @@
       (let [total (reduce + (vals (:parents node)))]
         (assoc-in new-pcfg [node-name :parents_total] total)))
     pcfg
-    pcfg
-    )
-  )
+    pcfg))
+
+
 
 (defrecord ProductionElement [label features])
 
@@ -138,8 +138,8 @@
                      (-> operations
                          (assoc-in [called :lambda]
                                    (lambda-from-raw-sem raw-sem))
-                         (assoc-in [called :op-type] :lambda-declare)
-                         )
+                         (assoc-in [called :op-type] :lambda-declare))
+
                      operations)]
     (reduce
       ; TODO: this NEEDS to be able to handle more than 1 of each kind!
@@ -160,8 +160,8 @@
             #(assoc %1
               :op-type :call-lambda
               :arg-idx called
-              :target-idx form-idx))
-          ))
+              :target-idx form-idx))))
+
       operations
       ; don't do this if we aren't actually calling a lambda
       (if called called-args-idxs))))
@@ -170,8 +170,8 @@
   (assoc production
     :count (double (get-count production))
     :elements (mapv prod-el (:elements production))
-    :sem (compile-prod-sem production))
-  )
+    :sem (compile-prod-sem production)))
+
 
 (defn reformat-pcfg-nodes [pcfg]
   (reduce-kv
@@ -192,11 +192,11 @@
                                       productions))
             :parents (priority-map-gt)
             :isolate_features (into #{}
-                                    (map keyword (:isolate_features entry)))
-            ))))
+                                    (map keyword (:isolate_features entry)))))))
+
     pcfg
-    pcfg
-    ))
+    pcfg))
+
 
 (defn build-operational-pcfg
   "makes a pcfg suitable for parsing, from a plain heirarchy"
@@ -216,11 +216,11 @@
                 (fn [old new] (+ (or old 0.0) new))
                 (:count production)))
             new-pcfg
-            (:productions node)
-            ))
+            (:productions node)))
+
         plain-pcfg-tree
-        plain-pcfg-tree
-        ))))
+        plain-pcfg-tree))))
+
 
 (defn make-lem-pcfg-name
   [syn-name surface-word]
@@ -239,11 +239,11 @@
             (fn [old new] (+ (or old 0.0) new))
             (get-count lem)))
         lkup
-        (:lemmas node)
-        ))
+        (:lemmas node)))
+
     (sorted-map)
-    lexicon
-    ))
+    lexicon))
+
 
 (defn group-lexicon-by-cat [lexicon]
   (reduce-kv
@@ -252,11 +252,11 @@
             total (reduce + (map get-count (:lemmas info)))]
         (-> lexical-categories
             (assoc-in [pos syn-name] total)
-            (update-in [pos :total] #(+ (or %1 0.0) total)))
-        ))
+            (update-in [pos :total] #(+ (or %1 0.0) total)))))
+
     {}
-    lexicon
-    ))
+    lexicon))
+
 
 (def sem-net-syms [:hypernyms :hyponyms])
 
@@ -286,8 +286,8 @@
     {:val syn-name}
     ; TODO: this probably needs to be more general other than just lambdas
     {:lambda (lambda-from-raw-sem raw-sem)
-     :val syn-name}
-    ))
+     :val syn-name}))
+
 
 (defn add-leaves-as-nodes [lexicalizing-pcfg lexicon syn-name]
   (reduce
@@ -323,11 +323,11 @@
                                  (:name lemma-entry))]
                     :count (:count lemma-entry)})
                  (get-in lexicon [syn-name :lemmas])))
-          (add-leaves-as-nodes lexicon syn-name)
-          )))
+          (add-leaves-as-nodes lexicon syn-name))))
+
     lexicalizing-pcfg
-    syns-to-totals
-    ))
+    syns-to-totals))
+
 
 (defn lexicalize-pcfg
   [unlexicalized-pcfg lexicon]
@@ -346,15 +346,15 @@
               (update-in
                 [pos-for-sym :productions]
                 #(apply conj % (map make-syn-production without-total)))
-              (add-word-leaves lexicon without-total pos-for-sym)
-              )
-          )
-        )
+              (add-word-leaves lexicon without-total pos-for-sym))))
+
+
+
       unlexicalized-pcfg
-      by-lex-cat
-      )
-    )
-  )
+      by-lex-cat)))
+
+
+
 
 (defn make-pos-lkup [pcfg]
   (let [pos-nodes (filter #(-> % second :lex-node) pcfg)]
@@ -378,11 +378,11 @@
                   pos-lkup
                   parents)
                 (apply conj (rest to-check) parents)
-                (+ iters 1)
-                )
-              )
-            )
-          ))
+                (+ iters 1))))))
+
+
+
+
       {}
       (map first pos-nodes))))
 
@@ -405,11 +405,11 @@
                          (update
                            pos-lkup
                            parent-label
-                           #(conj (or % #{}) pos-label))
-                         )
+                           #(conj (or % #{}) pos-label)))
+
                        pos-lkup
-                       parents)
-                     )
+                       parents))
+
                    pos-lkup
                    pos-labels)]
     (reduce
@@ -419,11 +419,11 @@
           pos-lkup
           (conj parents other-label)
           other-label
-          (+ 1 depth)
-          ))
+          (+ 1 depth)))
+
       pos-lkup
-      other-labels)
-    ))
+      other-labels)))
+
 
 (defn make-pos-lkup [pcfg]
   (make-pos-lkup' pcfg {} #{(start-sym)} (start-sym) 0))
