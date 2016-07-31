@@ -5,7 +5,8 @@
             [clojure-parser.core :refer [features-match?
                                          mk-traversable-tree
                                          tree-is-filled?
-                                         min-absolute-prob]]
+                                         min-absolute-prob
+                                         prod-prob-adj]]
             [clojure.string :as str]))
 
 (defn best-word-for-syn [pcfg syn features]
@@ -62,8 +63,8 @@
                               3 (updater :3-relation)
                               4 (updater :4-relation)
                               sem-for-gen))
-                          sem-for-gen
-                          ))
+                          sem-for-gen))
+
                       sem-for-gen
                       all-entries)]
     (reduce
@@ -71,21 +72,21 @@
         (let [entries (get-in sem-entry [:val discourse-var])
               with-pos (map (fn [e]
                               [e (pos-from-lex-var sem-entry e)])
-                         (filter #(not (coll? %)) entries))
-              ]
+                         (filter #(not (coll? %)) entries))]
+
           (reduce
             (fn [sem-for-gen [lex-var pos]]
               (-> sem-for-gen
-                  (assoc-in [:pos-lkup pos discourse-var] lex-var)
-                  (assoc-in [:discourse-lkup discourse-var pos] lex-var))
-              )
+                  (update-in [:pos-lkup pos discourse-var] conj lex-var)
+                  (update-in [:discourse-lkup discourse-var pos] conj lex-var)))
+
             sem-for-gen
-            with-pos)
-          )
-        )
+            with-pos)))
+
+
       sem-for-gen
-      discourse-vars)
-    ))
+      discourse-vars)))
+
 
 (defn default+ [arg1 arg2]
   (+ (or arg1 0) (or arg2 0)))
@@ -141,29 +142,100 @@
                              [:constraints sub-entry]
                              #(update % sub-constraint default+ 1)))
                          sem-for-gen
-                         sub-constraint)]
-                    ))
+                         sub-constraint)]))
+
                   [to-check sem-for-gen]
                   (map first not-full))
-                [to-check sem-for-gen])
-              ]
-          (recur to-check sem-for-gen))
-      ))))
+                [to-check sem-for-gen])]
 
-(defrecord GeneratorNode [label production children entries cur-var])
+          (recur to-check sem-for-gen))))))
+
+
+(defn sem-for-gen-constrained? [sem-for-gen]
+  (= (count (:fully-constrained sem-for-gen))
+     (count (:all sem-for-gen))))
+
+(defrecord GeneratorNode [label production children features entries cur-var])
+
+(defn generator-node [label cur-var]
+  (->GeneratorNode
+    label
+    nil
+    []
+    {}
+    nil
+    cur-var))
 
 (defn make-initial-generator-state [sem-entry]
   (mk-traversable-tree
-    (->GeneratorNode
-      (start-sym)
-      nil
-      nil
-      nil
-      nil)))
+    (map->GeneratorNode
+      {:children [], :label (start-sym)})))
 
-(defn next-states-for-sem-gen [glob-data state sem-for-gen prob]
+(defn- add-constraints [sem-for-gen constraints]
+  (reduce
+    (fn [sem-for-gen constraint]
+      (let [sem-for-gen (add-constraint sem-for-gen constraint)]
+        (if sem-for-gen-constrained?
+          (reduced sem-for-gen)
+          sem-for-gen)))
+    sem-for-gen
+    constraints))
 
-  )
+(defn- find-constraint
+  [state production pos-lkup production-el-sem sem-for-gen cur-var]
+  (let [cur-var (if (:inherit-var production-el-sem) cur-var)]
+    (if (= (:op-type production-el-sem) :call-lambda)
+      ()
+      ())))
+
+(defn- find-constraints
+  [state production pos-lkup sem-for-gen cur-var]
+  (map
+    #(find-constraint state production pos-lkup % sem-for-gen cur-var)
+    (:sem production)))
+
+(defn- next-child-state-and-sem
+  [pos-lkup state production sem-for-gen prob-adj]
+  (let [cur-var (-> state zp/node :cur-var)
+        constraints (find-constraints
+                      state
+                      production
+                      pos-lkup
+                      sem-for-gen
+                      cur-var)
+        sem-for-gen (add-constraints sem-for-gen constraints)]
+    (if (sem-for-gen-constrained? sem-for-gen)
+      nil
+      [[(append-and-go-to-child
+          state
+          (generator-node
+            (-> production :elements first :label)
+            (if (-> production :sem first :inherit-var) cur-var)))
+        sem-for-gen]
+       (fast-mult prob-adj (:count production))])))
+
+(defn next-states-for-sem-gen [glob-data, state, sem-for-gen, ^double prob]
+  (let [node (zp/node state)
+        label (:label node)
+        production (:production node)
+        pcfg (:pcfg glob-data)
+        pos-lkup (:pos-lkup glob-data)]
+    (if (nil? production)  ; we're going down
+      (let [productions (get-in pcfg [label :productions])
+            prob-adj (prod-prob-adj pcfg label prob)]
+        (->>
+          productions
+          (map #(next-child-state-and-sem
+                 pos-lkup
+                 state
+                 %
+                 sem-for-gen
+                 prob-adj))
+          (filter #(-> %))))
+      (if (= (-> production :elements count) (-> node :children count))
+        ()  ; TODO: have to go up, possibly resolving a constraint
+        ())))) ; TODO: have to go to next child
+
 
 (defn sem-for-gen-empty? [sem-for-gen]
   (= (count (:used sem-for-gen))
@@ -181,33 +253,33 @@
             [[state sem-for-gen], ^double prob] popped]
         (cond
           (sem-for-gen-empty? sem-for-gen)
-            (recur
-              frontier
-              (if (tree-is-filled? state)
-                (conj found [(zp/root state) prob])
-                found))
+          (recur
+            frontier
+            (if (tree-is-filled? state)
+              (conj found [(zp/root state) prob])
+              found))
           (< prob (min-absolute-prob))
-            (recur frontier found)
+          (recur frontier found)
           :else
-            (recur
-              (reduce
-                fast-pq-add!
-                frontier
-                (next-states-for-sem-gen
-                  glob-data
-                  state
-                  sem-for-gen
-                  prob))
-              found)
-          )))))
+          (recur
+            (reduce
+              fast-pq-add!
+              frontier
+              (next-states-for-sem-gen
+                glob-data
+                state
+                sem-for-gen
+                prob))
+            found))))))
 
-(defn get-words-from-tree [pcfg tree]
-  )
+
+(defn get-words-from-tree [pcfg tree])
+
 
 (defn generate-from-sem [glob-data sem-entry-val]
   (let [trees-probs (generate-trees-from-sem
                       glob-data
                       sem-entry-val
-                      10)]
+                      10)]))
 
-    ))
+
