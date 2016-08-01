@@ -266,16 +266,17 @@
     (merge carried inherited (:features new-entry))))
 
 
-(defn is-head? [current-node index]
-  (let [head-index (:head (:production current-node))]
+(defn is-head? [production index]
+  (let [head-index (:head production)]
     (or
       (= head-index index)
       (and (nil? head-index)
-           (= (- (count (:elements (:production current-node))) 1)
+           (= (- (count (:elements production)) 1)
               index)))))
 
 (defn get-parent-features [pcfg parent-node cur-node]
-  (if (is-head? parent-node (- (count (:children parent-node)) 1))
+  (if (is-head? (:production parent-node)
+                (- (count (:children parent-node)) 1))
     (reduce
       #(dissoc %1 %2)
       (:features cur-node)
@@ -318,7 +319,7 @@
         (if parent-state [[] [[parent-state current-prob]]] [[] []]))
       (let [new-entry (nth (:elements production) num-children)
             new-label (:label new-entry)
-            is-head (is-head? current-node num-children)
+            is-head (is-head? production num-children)
             next-features (get-next-features
                             current-node
                             new-entry
